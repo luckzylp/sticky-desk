@@ -836,7 +836,8 @@ impl Render for NoteView {
                                     .unwrap_or_default(),
                             )
                             .text_color(fg)
-                            .text_size(px(font_size as f32)),
+                            .text_size(px(font_size as f32))
+                            .selectable(false),
                         )
                         .into_any_element()
                 } else {

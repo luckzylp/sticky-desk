@@ -98,7 +98,9 @@ dialogs.
   the Markdown colour dialog for the selection or current line.
 - Markdown is the only note format (GitHub-compatible). There is no RTF mode
   and no MD/RTF toggle: the toolbar inserts Markdown syntax, and the eye
-  button switches to the rendered `TextView::markdown` preview.
+  button switches to the rendered `TextView::markdown` preview. The preview
+  must call `.selectable(false)`: otherwise moving the pointer over it
+  starts a text selection in the note window.
 - The shortcut toolbar is shown in edit mode only. Hide it while previewing
   and while a note is locked; never show it above the preview.
 - Because the toolbar disappears in preview, the `Preview` toggle in the
