@@ -171,4 +171,4 @@ mod linux {
 pub use linux::start;
 
 #[cfg(not(target_os = "linux"))]
-pub fn start(_sender: Sender<TrayCommand>, _notebooks: Vec<String>) {}
+pub fn start(_sender: std::sync::mpsc::Sender<TrayCommand>, _notebooks: Vec<String>) {}
