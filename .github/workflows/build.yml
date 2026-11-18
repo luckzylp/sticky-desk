@@ -14,9 +14,29 @@ env:
   CARGO_TERM_COLOR: always
 
 jobs:
+  check:
+    name: Formatting
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install Rust toolchain
+        uses: dtolnay/rust-toolchain@stable
+        with:
+          components: rustfmt
+
+      - name: Check formatting
+        run: cargo fmt --all -- --check
+
   linux-glibc217:
-    name: Linux x86_64 (glibc 2.17)
+    name: Linux ${{ matrix.arch }} (glibc 2.17)
     runs-on: ubuntu-22.04
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - arch: x86_64
+            target: x86_64-unknown-linux-gnu
     steps:
       - uses: actions/checkout@v4
 
@@ -36,11 +56,7 @@ jobs:
       - name: Install Rust toolchain
         uses: dtolnay/rust-toolchain@stable
         with:
-          targets: x86_64-unknown-linux-gnu
-          components: rustfmt
-
-      - name: Check formatting
-        run: cargo fmt --all -- --check
+          targets: ${{ matrix.target }}
 
       - name: Install Zig
         uses: mlugg/setup-zig@v2
@@ -52,7 +68,7 @@ jobs:
 
       - uses: Swatinem/rust-cache@v2
         with:
-          key: linux-glibc217
+          key: linux-glibc217-${{ matrix.arch }}
 
       - name: Build (glibc 2.17)
         env:
@@ -62,13 +78,13 @@ jobs:
           # GLIBC_2.17, and at runtime the target system provides its own
           # glibc-2.17-compatible libxkbcommon/libX11.
           RUSTFLAGS: "-C link-arg=-Wl,--allow-shlib-undefined"
-        run: cargo zigbuild --release --target x86_64-unknown-linux-gnu.2.17
+        run: cargo zigbuild --release --target ${{ matrix.target }}.2.17
 
       - name: Verify glibc symbol version
         shell: bash
         run: |
           set -euo pipefail
-          BIN=target/x86_64-unknown-linux-gnu/release/sticky-desk
+          BIN=target/${{ matrix.target }}/release/sticky-desk
           echo "Binary: $BIN"
           MAX=$(objdump -T "$BIN" | grep -oE 'GLIBC_[0-9]+\.[0-9]+' | sed 's/GLIBC_//' | sort -Vu | tail -1)
           echo "Maximum required GLIBC version: $MAX"
@@ -80,8 +96,9 @@ jobs:
       - name: Package
         run: |
           set -euo pipefail
-          BIN=target/x86_64-unknown-linux-gnu/release/sticky-desk
-          BUNDLE=dist/sticky-desk-linux-x86_64
+          BIN=target/${{ matrix.target }}/release/sticky-desk
+          NAME=sticky-desk-linux-${{ matrix.arch }}-glibc2.17
+          BUNDLE=dist/sticky-desk-linux-${{ matrix.arch }}
           mkdir -p "$BUNDLE/share/applications"
           cp "$BIN" "$BUNDLE/sticky-desk"
           strip "$BUNDLE/sticky-desk" || true
@@ -91,46 +108,122 @@ jobs:
             mkdir -p "$dir"
             cp "assets/linux/sticky-desk-${s}.png" "$dir/sticky-desk.png"
           done
-          cp "$BIN" dist/sticky-desk-linux-x86_64-glibc2.17
-          strip dist/sticky-desk-linux-x86_64-glibc2.17 || true
-          tar -C dist -czf dist/sticky-desk-linux-x86_64-glibc2.17.tar.gz sticky-desk-linux-x86_64
+          cp "$BIN" "dist/$NAME"
+          strip "dist/$NAME" || true
+          tar -C dist -czf "dist/$NAME.tar.gz" "sticky-desk-linux-${{ matrix.arch }}"
           rm -rf "$BUNDLE"
 
       - uses: actions/upload-artifact@v4
         with:
-          name: sticky-desk-linux-x86_64-glibc2.17
+          name: sticky-desk-linux-${{ matrix.arch }}-glibc2.17
           path: |
-            dist/sticky-desk-linux-x86_64-glibc2.17
-            dist/sticky-desk-linux-x86_64-glibc2.17.tar.gz
+            dist/sticky-desk-linux-${{ matrix.arch }}-glibc2.17
+            dist/sticky-desk-linux-${{ matrix.arch }}-glibc2.17.tar.gz
+
+  linux-latest:
+    name: Linux ${{ matrix.arch }} (latest glibc)
+    runs-on: ${{ matrix.runner }}
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - arch: x86_64
+            runner: ubuntu-latest
+            target: x86_64-unknown-linux-gnu
+          - arch: arm64
+            runner: ubuntu-24.04-arm
+            target: aarch64-unknown-linux-gnu
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install system dependencies
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y --no-install-recommends \
+            pkg-config clang cmake make \
+            libx11-dev libx11-xcb-dev libxcb1-dev libxcb-render0-dev \
+            libxcb-shape0-dev libxcb-xfixes0-dev \
+            libxkbcommon-dev libxkbcommon-x11-dev \
+            libwayland-dev wayland-protocols \
+            libfontconfig1-dev libfreetype6-dev \
+            libgl1-mesa-dev libegl1-mesa-dev libvulkan-dev \
+            libasound2-dev
+
+      - name: Install Rust toolchain
+        uses: dtolnay/rust-toolchain@stable
+        with:
+          targets: ${{ matrix.target }}
+
+      - uses: Swatinem/rust-cache@v2
+        with:
+          key: linux-latest-${{ matrix.arch }}
+
+      - name: Build
+        run: cargo build --release --target ${{ matrix.target }}
+
+      - name: Package
+        run: |
+          set -euo pipefail
+          BIN=target/${{ matrix.target }}/release/sticky-desk
+          NAME=sticky-desk-linux-${{ matrix.arch }}-glibc-latest
+          BUNDLE=dist/sticky-desk-linux-${{ matrix.arch }}
+          mkdir -p "$BUNDLE/share/applications"
+          cp "$BIN" "$BUNDLE/sticky-desk"
+          strip "$BUNDLE/sticky-desk" || true
+          cp assets/linux/sticky-desk.desktop "$BUNDLE/share/applications/"
+          for s in 16 32 48 64 128 256; do
+            dir="$BUNDLE/share/icons/hicolor/${s}x${s}/apps"
+            mkdir -p "$dir"
+            cp "assets/linux/sticky-desk-${s}.png" "$dir/sticky-desk.png"
+          done
+          cp "$BIN" "dist/$NAME"
+          strip "dist/$NAME" || true
+          tar -C dist -czf "dist/$NAME.tar.gz" "sticky-desk-linux-${{ matrix.arch }}"
+          rm -rf "$BUNDLE"
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: sticky-desk-linux-${{ matrix.arch }}-glibc-latest
+          path: |
+            dist/sticky-desk-linux-${{ matrix.arch }}-glibc-latest
+            dist/sticky-desk-linux-${{ matrix.arch }}-glibc-latest.tar.gz
 
   windows:
-    name: Windows x86_64 (native)
+    name: Windows ${{ matrix.arch }} (native)
     runs-on: windows-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - arch: x86_64
+            target: x86_64-pc-windows-msvc
+          - arch: arm64
+            target: aarch64-pc-windows-msvc
     steps:
       - uses: actions/checkout@v4
 
       - name: Install Rust toolchain
         uses: dtolnay/rust-toolchain@stable
         with:
-          targets: x86_64-pc-windows-msvc
+          targets: ${{ matrix.target }}
 
       - uses: Swatinem/rust-cache@v2
         with:
-          key: windows-x86_64-msvc
+          key: windows-${{ matrix.arch }}-msvc
 
       - name: Build
-        run: cargo build --release --target x86_64-pc-windows-msvc
+        run: cargo build --release --target ${{ matrix.target }}
 
       - name: Package
         shell: bash
         run: |
           mkdir -p dist
-          cp target/x86_64-pc-windows-msvc/release/sticky-desk.exe dist/sticky-desk-windows-x86_64.exe
+          cp "target/${{ matrix.target }}/release/sticky-desk.exe" "dist/sticky-desk-windows-${{ matrix.arch }}.exe"
 
       - uses: actions/upload-artifact@v4
         with:
-          name: sticky-desk-windows-x86_64
-          path: dist/sticky-desk-windows-x86_64.exe
+          name: sticky-desk-windows-${{ matrix.arch }}
+          path: dist/sticky-desk-windows-${{ matrix.arch }}.exe
 
   macos:
     name: macOS arm64 (native)
@@ -161,7 +254,7 @@ jobs:
   release:
     name: Publish GitHub release
     if: startsWith(github.ref, 'refs/tags/v')
-    needs: [linux-glibc217, windows, macos]
+    needs: [linux-glibc217, linux-latest, windows, macos]
     runs-on: ubuntu-22.04
     permissions:
       contents: write
