@@ -219,12 +219,20 @@ jobs:
 
       - name: Publish build log on failure
         if: failure()
-        shell: pwsh
+        shell: bash
         run: |
-          Add-Content -Path $env:GITHUB_STEP_SUMMARY -Value "### Build output"
-          Add-Content -Path $env:GITHUB_STEP_SUMMARY -Value '```'
-          Get-Content -Path build.log -Tail 80 | Add-Content -Path $env:GITHUB_STEP_SUMMARY
-          Add-Content -Path $env:GITHUB_STEP_SUMMARY -Value '```'
+          tail -n 80 build.log > build-tail.txt
+          {
+            echo '### Build output'
+            echo '```'
+            cat build-tail.txt
+            echo '```'
+          } >> "$GITHUB_STEP_SUMMARY"
+          python3 - <<'PY'
+          text = open('build-tail.txt', encoding='utf-8', errors='replace').read()
+          text = text.replace('%', '%25').replace('\r', '').replace('\n', '%0A')
+          print(f'::error title=Build output::{text}')
+          PY
 
       - name: Package
         shell: bash
@@ -258,12 +266,18 @@ jobs:
       - name: Publish build log on failure
         if: failure()
         run: |
+          tail -n 80 build.log > build-tail.txt
           {
             echo '### Build output'
             echo '```'
-            tail -n 80 build.log
+            cat build-tail.txt
             echo '```'
           } >> "$GITHUB_STEP_SUMMARY"
+          python3 - <<'PY'
+          text = open('build-tail.txt', encoding='utf-8', errors='replace').read()
+          text = text.replace('%', '%25').replace('\r', '').replace('\n', '%0A')
+          print(f'::error title=Build output::{text}')
+          PY
 
       - name: Package
         run: |
