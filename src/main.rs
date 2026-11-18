@@ -13,6 +13,7 @@ use std::borrow::Cow;
 fn main() {
     gpui_kit::application()
         .with_assets(gpui_kit::assets::AllAssets)
+        .with_quit_mode(gpui_kit::QuitMode::Explicit)
         .run(|cx| {
             gpui_kit::init(cx);
             app::chrome::install_transparent_root(cx);
@@ -33,6 +34,18 @@ fn main() {
             let _ = cx.text_system().add_fonts(fonts);
 
             let model = cx.new(|_| AppModel::new());
+
+            // The app keeps running without windows when "close to tray" is on.
+            // Otherwise closing the last window quits, matching the previous
+            // LastWindowClosed behaviour.
+            let close_model = model.clone();
+            let close_sub = cx.on_window_closed(move |cx, _| {
+                if cx.windows().is_empty() && !close_model.read(cx).settings.close_to_tray {
+                    cx.quit();
+                }
+            });
+            std::mem::forget(close_sub);
+
             let dark = {
                 let m = model.read(cx);
                 match m.settings.app_mode {

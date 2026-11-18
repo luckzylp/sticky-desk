@@ -329,6 +329,16 @@ impl Render for SettingsView {
                             });
                         }
                     }))
+                    .child(toggle_row("Minimize to tray on close", s.close_to_tray, {
+                        let model = model.clone();
+                        move |value, cx| {
+                            model.update(cx, |m, cx| {
+                                m.settings.close_to_tray = value;
+                                m.save_settings();
+                                cx.notify();
+                            });
+                        }
+                    }))
                     .child(toggle_row("Automatically check for updates", s.check_updates, {
                         let model = model.clone();
                         move |value, cx| {

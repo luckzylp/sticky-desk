@@ -497,6 +497,8 @@ pub struct Settings {
     pub accent_color: u32,
     pub auto_start: bool,
     pub show_all_notes_on_startup: bool,
+    #[serde(default = "default_true")]
+    pub close_to_tray: bool,
     pub check_updates: bool,
     pub live_preview: bool,
     pub always_show_title: bool,
@@ -513,13 +515,14 @@ pub struct Settings {
 impl Default for Settings {
     fn default() -> Self {
         Self {
-            version: "0.3.0".into(),
+            version: "0.3.1".into(),
             language: "en".into(),
             app_mode: AppMode::Light,
             note_mode: NoteMode::Light,
             accent_color: 0x0078D4,
             auto_start: false,
             show_all_notes_on_startup: true,
+            close_to_tray: true,
             check_updates: true,
             live_preview: true,
             always_show_title: false,

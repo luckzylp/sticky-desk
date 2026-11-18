@@ -106,6 +106,17 @@ dialogs.
 - Links must contain only the app's supported destinations; no legacy
   "Help" link to the original Windows product.
 
+## Window lifecycle and tray
+
+- The app uses `QuitMode::Explicit`. A `cx.on_window_closed` observer quits
+  only when no windows remain and `settings.close_to_tray` is off.
+- `close_to_tray` defaults to true (serde default) and is exposed in Settings
+  as "Minimize to tray on close". With it on, closing the last window keeps
+  the process and its tray icon alive; the tray's `Explorer`, `Show All Notes`
+  and `Exit` actions are the way back.
+- Do not switch back to `QuitMode::LastWindowClosed`: it quits before the
+  tray-only state can be reached.
+
 ## Dialogs and menus
 
 - Use `window.open_dialog` and `DialogClose` from GPUI Kit.
