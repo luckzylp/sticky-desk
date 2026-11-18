@@ -38,7 +38,7 @@ mod linux {
     }
 
     fn icon() -> Vec<Icon> {
-        let bytes = include_bytes!("../../assets/images/sticky32.png");
+        let bytes = include_bytes!("../../assets/linux/sticky-desk-64.png");
         match image::load_from_memory(bytes) {
             Ok(img) => {
                 let img = img.to_rgba8();

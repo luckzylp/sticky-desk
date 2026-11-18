@@ -1,0 +1,16 @@
+[Desktop Entry]
+Type=Application
+Version=1.5
+Name=StickyDesk
+GenericName=Sticky Notes
+Comment=Markdown sticky notes for your desktop
+Exec=sticky-desk
+TryExec=sticky-desk
+Icon=sticky-desk
+Terminal=false
+Categories=Utility;
+Keywords=notes;sticky;memo;markdown;notebook;todo;
+StartupNotify=true
+StartupWMClass=sticky-desk
+SingleMainWindow=true
+X-GNOME-UsesNotifications=true

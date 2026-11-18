@@ -8,7 +8,7 @@ use gpui_kit::{
 use std::sync::Arc;
 
 fn app_icon() -> Option<Arc<image::RgbaImage>> {
-    let bytes = include_bytes!("../../assets/images/sticky32.png");
+    let bytes = include_bytes!("../../assets/linux/sticky-desk-64.png");
     image::load_from_memory(bytes)
         .ok()
         .map(|img| Arc::new(img.to_rgba8()))
