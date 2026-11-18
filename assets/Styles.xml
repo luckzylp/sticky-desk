@@ -1,0 +1,232 @@
+﻿<!--Begin Application Styles-->
+<Styles>
+    <String Key="DefaultFontFamily" Value="Segoe UI" />
+    <String Key="SymbolFontFamily" Value="Segoe Fluent Icons" />
+    <String Key="Fluent" Value="FluentSystemIcons-Resizable"/>
+
+    <!--Begin TitleBar Styles-->
+    <Style Key="TitleBarButtons" TargetType="Button">
+        <Setter Property="FontFamily" Value="{StaticResource SymbolFontFamily}" />
+        <Setter Property="CornerRadius" Value="0"/>
+        <Setter Property="FontSize" Value="10"/>
+        <Setter Property="Foreground" Value="White"/>
+        <Setter Property="OverType" Value="Background"/>
+        <Setter Property="OverBrush" Value="{ThemeResource SubtleFillColorSecondaryBrush}" />
+        <Setter Property="PressedBrush" Value="{ThemeResource SubtleFillColorTertiaryBrush}" />
+        <Setter Property="Background" Value="Transparent"/>
+        <Setter Property="Width" Value="46"/>
+        <Setter Property="BorderThickness" Value="0"/>
+        <Setter Property="MaxHeight" Value="32"/>
+    </Style>
+    <!--End TitleBar Styles-->
+
+    <!--Calendar Styles-->
+    <Style Key="CalendarItem" TargetType="Button">
+        <Setter Property="Margin" Value="1.5"/>
+        <Setter Property="BorderThickness" Value="0"/>
+        <Setter Property="BorderBrush" Value="Transparent"/>
+        <Setter Property="CornerRadius" Value="22"/>
+        <Setter Property="Background" Value="{ThemeResource SystemTransparentBrush}"/>
+        <Setter Property="Align" Value="Client"/>
+        <Setter Property="Foreground" Value="{ThemeResource SystemBaseMediumHighBrush}"/>
+        <Setter Property="OverType" Value="Background"/>
+        <Setter Property="OverBrush" Value="{ThemeResource SystemListLowBrush}"/>
+        <Setter Property="PressedBrush" Value="{ThemeResource AccentFillColorDefaultBrush}"/>
+        <Setter Property="ForegroundPressedBrush" Value="{ThemeResource SystemBackgroundBrush}"/>
+    </Style>
+
+    <Style Key="CalendarItemSelected" BasedOn="CalendarItem" TargetType="Button">
+        <Setter Property="Background" Value="{ThemeResource SystemTransparentBrush}"/>
+        <Setter Property="BorderBrush" Value="{ThemeResource AccentFillColorDefaultBrush}"/>
+        <Setter Property="BorderThickness" Value="1"/>
+        <Setter Property="Elevated" Value="false"/>
+    </Style>
+
+    <Style Key="CalendarItemToday" BasedOn="CalendarItem" TargetType="Button">
+        <Setter Property="BorderThickness" Value="0"/>
+        <Setter Property="BorderBrush" Value="{ThemeResource SystemBaseMediumBrush}"/>
+        <Setter Property="Foreground" Value="{ThemeResource SystemBackgroundBrush}"/>
+        <Setter Property="Background" Value="{ThemeResource AccentFillColorDefaultBrush}"/>
+        <Setter Property="OverBrush" Value="{ThemeResource AccentFillColorSecondaryBrush}"/>
+        <Setter Property="ForegroundPressedBrush" Value="{ThemeResource SystemBackgroundBrush}"/>
+    </Style>
+
+    <Style Key="CalendarItemTodaySelected" BasedOn="CalendarItemToday" TargetType="Button">
+        <Setter Property="Foreground" Value="{ThemeResource SystemBackgroundBrush}"/>
+        <Setter Property="Background" Value="{ThemeResource AccentFillColorSecondaryBrush}"/>
+    </Style>
+
+    <Style Key="DialogTextBox" />
+    <Style Key="DialogButton" />
+    <Style Key="Dialog">
+        <Setter Property="Background" Value="{ThemeResource AppPivotBackground}"/>
+    </Style>
+
+    <Style Key="AccentButton" TargetType="Button">
+        <Setter Property="Foreground" Value="{ThemeResource SystemBackgroundBrush}"/>
+        <Setter Property="Background" Value="{ThemeResource AccentFillColorDefaultBrush}"/>
+        <Setter Property="OverBrush" Value="{ThemeResource AccentFillColorSecondaryBrush}"/>
+        <Setter Property="PressedBrush" Value="{ThemeResource AccentFillColorTertiaryBrush}"/>
+        <Setter Property="ForegroundPressedBrush" Value="{ThemeResource TextOnAccentFillColorSecondaryBrush}"/>
+    </Style>
+
+    <Style Key="ToolItem" TargetType="Button">
+        <Setter Property="Width" Value="40"/>
+        <Setter Property="Background" Value="{ThemeResource SystemTransparentBrush}"/>
+        <Setter Property="OverType" Value="Background" />
+        <Setter Property="OverBrush" Value="{ThemeResource SystemListLowBrush}" />
+        <Setter Property="FontFamily" Value="{StaticResource SymbolFontFamily}" />
+        <Setter Property="FontSize" Value="16" />
+        <Setter Property="BorderBrush" Value="{ThemeResource SystemTransparentBrush}"/>
+        <Setter Property="Padding" Value="0"/>
+        <Setter Property="BorderThickness" Value="0"/>
+    </Style>
+
+    <Style Key="NoteButton" TargetType="Button">
+        <Setter Property="Background" Value="{ThemeResource SystemTransparentBrush}"/>
+        <Setter Property="OverType" Value="Background" />
+        <Setter Property="OverBrush" Value="{ThemeResource NoteButtonOverBrush}" />
+        <Setter Property="PressedBrush" Value="{ThemeResource NoteButtonPressedBrush}"/>
+        <Setter Property="CornerRadius" Value="0"/>
+        <Setter Property="Elevated" Value="false"/>
+        <Setter Property="BorderThickness" Value="0"/>
+        <Setter Property="Width" Value="30"/>
+        <Setter Property="FontFamily" Value="{StaticResource SymbolFontFamily}"/>
+        <!--<Setter Property="Padding" Value="0,1,0,0"/>-->
+    </Style>
+
+    <Style Key="NoteTool" TargetType="Button">
+        <Setter Property="BorderThickness"  Value="0"/>
+        <Setter Property="Align" Value="Left"/>
+        <Setter Property="Padding" Value="0,0,0,1"/>
+        <Setter Property="Width" Value="18"/>
+        <Setter Property="FontFamily" Value="{StaticResource SymbolFontFamily}"/>
+        <Setter Property="OverType" Value="Foreground"/>
+        <Setter Property="OverBrush" Value="{ThemeResource NoteToolOverBrush}"/>
+        <Setter Property="PressedBrush" Value="{ThemeResource NoteToolPressedBrush}"/>
+        <Setter Property="Background" Value="{ThemeResource SystemTransparentBrush}"/>
+        <Setter Property="CornerRadius" Value="0"/>
+    </Style>
+
+    <Style Key="FillButton" TargetType="Button">
+        <Setter Property="Background" Value="{ThemeResource SubtleFillColorTransparentBrush}"/>
+        <Setter Property="Padding" Value="0"/>
+        <Setter Property="OverType" Value="Background" />
+        <Setter Property="OverBrush" Value="{ThemeResource SubtleFillColorSecondaryBrush}" />
+        <Setter Property="PressedBrush" Value="{ThemeResource SubtleFillColorTertiaryBrush}" />
+        <Setter Property="BorderThickness" Value="0"/>
+    </Style>
+
+    <Style Key="LVButton" BasedOn="FillButton" TargetType="Button">
+        <Setter Property="Width" Value="32"/>
+        <Setter Property="CornerRadius" Value="0"/>
+        <Setter Property="FontFamily" Value="{StaticResource SymbolFontFamily}"/>
+        <Setter Property="FontSize" Value="16"/>
+    </Style>
+
+    <Style Key="NotificationButton" TargetType="Button">
+        <Setter Property="Background" Value="{ThemeResource SystemTransparentBrush}"/>
+        <Setter Property="OverBrush" Value="{ThemeResource AppTitleBarOverBrush}" />
+        <Setter Property="PressedBrush" Value="{ThemeResource SystemListMediumBrush}"/>
+    </Style>
+
+    <Style Key="MenuItemStyle">
+        <Setter Property="Padding" Value="0"/>
+        <Setter Property="Margin" Value="0,0,0,4"/>
+        <Setter Property="Height" Value="36" />
+        <Setter Property="Background" Value="{ThemeResource SystemTransparentBrush}"/>
+        <Setter Property="OverBrush" Value="{ThemeResource SubtleFillColorSecondaryBrush}" />
+        <Setter Property="PressedBrush" Value="{ThemeResource SubtleFillColorTertiaryBrush}" />
+    </Style>
+
+    <Style Key="MenuItemStyle2" BasedOn="FillButton">
+        <Setter Property="Height" Value="48" />
+        <Setter Property="BorderThickness" Value="0"/>
+    </Style>
+
+    <Style Key="MenuIcon" >
+        <Setter Property="FontFamily" Value="{StaticResource SymbolFontFamily}" />
+        <Setter Property="FontSize" Value="16" />
+        <Setter Property="Align" Value="Left" />
+        <Setter Property="Width" Value="48" />
+        <Setter Property="TextAlignment" Value="Center" />
+    </Style>
+
+    <Style Key="SoundItems" TargetType="ListViewItem">
+        <Setter Property="Padding" Value="0" />
+        <Setter Property="Height" Value="40" />
+        <Setter Property="Background" Value="{ThemeResource SystemTransparentBrush}"/>
+    </Style>
+
+    <Style Key="NoteListItemStyle" TargetType="ListViewItem">
+        <Setter Property="Height" Value="52" />
+        <Setter Property="OverBrush" Value="{ThemeResource ControlFillColorSecondaryBrush}"/>
+        <Setter Property="PressedBrush" Value="{ThemeResource CardBackgroundFillColorSecondaryBrush}"/>
+        <Setter Property="Background" Value="{ThemeResource CardBackgroundFillColorDefaultBrush}"/>
+        <Setter Property="Padding" Value="12,4,0,4"/>
+        <Setter Property="Margin" Value="0,0,0,2" />
+        <Setter Property="CornerRadius" Value="4"/>
+    </Style>
+
+    <Style Key="NoteListSelectedItemStyle" TargetType="ListViewItem">
+        <Setter Property="OverBrush" Value="{ThemeResource ControlFillColorSecondaryBrush}"/>
+        <Setter Property="PressedBrush" Value="{ThemeResource CardBackgroundFillColorSecondaryBrush}"/>
+        <Setter Property="Background" Value="{ThemeResource AppNoteListItemSelectedBrush}"/>
+    </Style>
+
+    <Style Key="DayItem" TargetType="Button">
+        <Setter Property="BorderThickness" Value="1"/>
+        <Setter Property="Align" Value="Left"/>
+        <Setter Property="FontSize" Value="12"/>
+        <Setter Property="Padding" Value="0"/>
+        <Setter Property="TextVerticalAlignment" Value="Center"/>
+        <Setter Property="Width" Value="32"/>
+        <Setter Property="CornerRadius" Value="16"/>
+        <Setter Property="Elevated" Value="false"/>
+    </Style>
+
+    <Style Key="LoopItem" TargetType="Button">
+        <Setter Property="Align" Value="Top"/>
+        <Setter Property="CornerRadius" Value="4"/>
+        <Setter Property="OverType" Value="Background"/>
+        <Setter Property="OverBrush" Value="{ThemeResource SystemListLowBrush}"/>
+        <Setter Property="PressedBrush" Value="{ThemeResource SystemListLowBrush}"/>
+        <Setter Property="Background" Value="{ThemeResource SystemTransparentBrush}"/>
+        <Setter Property="BorderThickness" Value="0"/>
+        <Setter Property="FontSize" Value="14" />
+        <Setter Property="IsTabStop" Value="false"/>
+    </Style>
+
+    <Style Key="SymBtn" BasedOn="FillButton">
+        <Setter Property="FontSize" Value="20" />
+        <Setter Property="Align" Value="Client" />
+        <Setter Property="Padding" Value="0" />
+    </Style>
+
+    <Style Key="TitleBar" TargetType="TitleBar">
+        <Setter Property="WindowBorder" Value="1"/>
+        <Setter Property="Foreground" Value="{ThemeResource SystemForegroundBrush}" />
+        <Setter Property="Background" Value="{ThemeResource SystemTransparentBrush}"/>
+        <Setter Property="ActiveBorderBrush" Value="{ThemeResource WinActiveBorderBrush}"/>
+        <Setter Property="InactiveBorderBrush" Value="{ThemeResource WinInactiveBorderBrush}"/>
+    </Style>
+
+    <Style Key="FormFrame" TargetType="Panel">
+        <Setter Property="BorderThickness" Value="1"/>
+        <Setter Property="BorderBrush" Value="{ThemeResource ControlFrameBrush}"/>
+        <Setter Property="CornerRadius" Value="4"/>
+        <Setter Property="Margin" Value="16"/>
+    </Style>
+
+    <Style Key="ColorCell" TargetType="Button">
+        <Setter Property="Align" Value="Client"/>
+        <Setter Property="Margin" Value="1"/>
+        <Setter Property="Padding" Value="0"/>
+        <Setter Property="OverType" Value="Border"/>
+        <Setter Property="OverBrush" Value="{ThemeResource SystemForegroundBrush}"/>
+        <Setter Property="PressedBrush" Value="{ThemeResource SystemForegroundBrush}"/>
+        <Setter Property="BorderBrush" Value="{ThemeResource SystemTransparentBrush}"/>
+        <Setter Property="Elevated" Value="false"/>
+        <Setter Property="BorderThickness" Value="2"/>
+    </Style>
+</Styles>
