@@ -451,28 +451,14 @@ impl Render for ExplorerView {
                             .child("Notebooks"),
                     )
                     .child(
-                        h_flex()
-                            .gap_1()
-                            .child(
-                                Button::new("nb-new-icon")
-                                    .ghost()
-                                    .xsmall()
-                                    .icon(IconName::Plus)
-                                    .tooltip("New Notebook")
-                                    .on_click(cx.listener(|this, _, window, cx| {
-                                        this.open_new_notebook(window, cx);
-                                    })),
-                            )
-                            .child(
-                                Button::new("nb-manage-icon")
-                                    .ghost()
-                                    .xsmall()
-                                    .icon(IconName::Ellipsis)
-                                    .tooltip("Manage Notebooks")
-                                    .on_click(cx.listener(|this, _, window, cx| {
-                                        this.manage_notebooks(window, cx);
-                                    })),
-                            ),
+                        Button::new("nb-new-icon")
+                            .ghost()
+                            .xsmall()
+                            .icon(IconName::Plus)
+                            .tooltip("New Notebook")
+                            .on_click(cx.listener(|this, _, window, cx| {
+                                this.open_new_notebook(window, cx);
+                            })),
                     ),
             )
             .children(notebooks.iter().enumerate().map(|(i, name)| {
@@ -482,7 +468,6 @@ impl Render for ExplorerView {
                 let _ = i;
                 let count = *notebook_counts.get(&name).unwrap_or(&0);
                 let select_name = name.clone();
-                let menu_name = name.clone();
                 let rename_name = name.clone();
                 let delete_name = name.clone();
                 notebook_item(
@@ -506,9 +491,6 @@ impl Render for ExplorerView {
                     }),
                     cx.listener(move |this, _, window, cx| {
                         this.delete_notebook_dialog(delete_name.clone(), window, cx);
-                    }),
-                    cx.listener(move |this, _: &gpui_kit::MouseDownEvent, window, cx| {
-                        this.notebook_context_menu(menu_name.clone(), window, cx);
                     }),
                 )
             }))
@@ -892,6 +874,9 @@ impl Render for ExplorerView {
 
 impl ExplorerView {
     fn rename_notebook_dialog(&mut self, old: String, window: &mut Window, cx: &mut Context<Self>) {
+        if old == "Default" {
+            return;
+        }
         let model = self.model.clone();
         let input = cx.new(|cx| InputState::new(window, cx).placeholder("Notebook name"));
         input.update(cx, |state, cx| state.set_value(old.clone(), window, cx));
@@ -940,6 +925,9 @@ impl ExplorerView {
         window: &mut Window,
         cx: &mut Context<Self>,
     ) {
+        if name == "Default" {
+            return;
+        }
         let model = self.model.clone();
         window.open_dialog(cx, move |dialog, _window, _cx| {
             let model = model.clone();
@@ -976,92 +964,6 @@ impl ExplorerView {
                                 }),
                         ),
                 )
-        });
-    }
-
-    fn notebook_context_menu(&mut self, name: String, window: &mut Window, cx: &mut Context<Self>) {
-        let view = cx.entity().downgrade();
-        window.open_dialog(cx, move |dialog, _window, _cx| {
-            let view_rename = view.clone();
-            let name_rename = name.clone();
-            let rename = Button::new("nb-ctx-rename").label("Rename").on_click(
-                move |_, window: &mut Window, cx: &mut App| {
-                    window.close_dialog(cx);
-                    let name = name_rename.clone();
-                    let _ = view_rename
-                        .update(cx, |this, cx| this.rename_notebook_dialog(name, window, cx));
-                },
-            );
-            let view_delete = view.clone();
-            let name_delete = name.clone();
-            let delete = Button::new("nb-ctx-delete")
-                .danger()
-                .label("Delete")
-                .on_click(move |_, window: &mut Window, cx: &mut App| {
-                    window.close_dialog(cx);
-                    let name = name_delete.clone();
-                    let _ = view_delete
-                        .update(cx, |this, cx| this.delete_notebook_dialog(name, window, cx));
-                });
-            dialog.title(name.clone()).w(px(300.)).child(
-                v_flex()
-                    .gap_1()
-                    .child(rename)
-                    .when(name != "Default", |d| d.child(delete)),
-            )
-        });
-    }
-
-    fn manage_notebooks(&mut self, window: &mut Window, cx: &mut Context<Self>) {
-        let model = self.model.clone();
-        let notebooks = self.model.read(cx).notebooks_with_default();
-        window.open_dialog(cx, move |dialog, _window, _cx| {
-            let mut col = v_flex().gap_1();
-            for (i, name) in notebooks.iter().enumerate() {
-                let name = name.clone();
-                let m_del = model.clone();
-                let m_ren = model.clone();
-                let name_del = name.clone();
-                let is_default = name == "Default";
-                let row = h_flex()
-                    .gap_2()
-                    .items_center()
-                    .child(div().flex_1().child(name.clone()))
-                    .when(!is_default, |r| {
-                        r.child(Button::new(("rename-nb", i)).small().label("Rename").on_click(move |_, window: &mut Window, cx: &mut App| {
-                            let m = m_ren.clone();
-                            let old = name.clone();
-                            let input = cx.new(|cx| InputState::new(window, cx).placeholder("Notebook name"));
-                            input.update(cx, |state, cx| state.set_value(old.clone(), window, cx));
-                            window.open_dialog(cx, move |dialog, _window, _cx| {
-                                let m = m.clone();
-                                let input = input.clone();
-                                let old = old.clone();
-                                dialog.title("Rename Notebook").w(px(360.)).child(Input::new(&input)).footer(
-                                    DialogFooter::new().gap_2().child(DialogClose::new().child(Button::new("rename-cancel").label("Cancel"))).child(DialogClose::new().child(Button::new("rename-save").primary().label("Rename").on_click(move |_, window: &mut Window, cx: &mut App| {
-                                        let new = input.read(cx).value().trim().to_string();
-                                        if !new.is_empty() {
-                                            m.update(cx, |m, cx| {
-                                                m.rename_notebook(&old, &new);
-                                                m.save_settings();
-                                                cx.notify();
-                                            });
-                                        }
-                                        window.close_dialog(cx);
-                                    }))))
-                            });
-                        }))
-                        .child(Button::new(("delete-nb", i)).small().danger().label("Delete").on_click(move |_, window: &mut Window, cx: &mut App| {
-                            m_del.update(cx, |m, cx| {
-                                m.delete_notebook(&name_del);
-                                cx.notify();
-                            });
-                            window.close_dialog(cx);
-                        }))
-                    });
-                col = col.child(row);
-            }
-            dialog.title("Notebooks").w(px(480.)).child(col)
         });
     }
 
@@ -1118,7 +1020,6 @@ fn notebook_item(
     on_select: impl Fn(&ClickEvent, &mut Window, &mut App) + 'static,
     on_rename: impl Fn(&ClickEvent, &mut Window, &mut App) + 'static,
     on_delete: impl Fn(&ClickEvent, &mut Window, &mut App) + 'static,
-    on_menu: impl Fn(&gpui_kit::MouseDownEvent, &mut Window, &mut App) + 'static,
 ) -> impl IntoElement {
     let hover_bg = cx.theme().muted.opacity(0.28);
     let selected_bg = cx.theme().accent.opacity(0.16);
@@ -1137,7 +1038,6 @@ fn notebook_item(
         .hover(move |d| d.bg(hover_bg))
         .cursor(gpui_kit::CursorStyle::PointingHand)
         .on_click(on_select)
-        .on_mouse_down(MouseButton::Right, on_menu)
         .child(Icon::new(IconName::Folder).small())
         .child(div().flex_1().min_w(px(0.)).child(name.clone()))
         .when(count > 0, |d| {
@@ -1148,16 +1048,16 @@ fn notebook_item(
                     .child(count.to_string()),
             )
         })
-        .child(
-            Button::new(format!("nb-row-rename-{name}"))
-                .ghost()
-                .xsmall()
-                .icon(IconName::Pencil)
-                .tooltip("Rename")
-                .on_click(on_rename),
-        )
         .when(name != "Default", |d| {
             d.child(
+                Button::new(format!("nb-row-rename-{name}"))
+                    .ghost()
+                    .xsmall()
+                    .icon(IconName::Pencil)
+                    .tooltip("Rename")
+                    .on_click(on_rename),
+            )
+            .child(
                 Button::new(format!("nb-row-delete-{name}"))
                     .ghost()
                     .xsmall()

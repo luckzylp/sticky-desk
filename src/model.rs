@@ -513,7 +513,7 @@ pub struct Settings {
 impl Default for Settings {
     fn default() -> Self {
         Self {
-            version: "0.2.0".into(),
+            version: "0.3.0".into(),
             language: "en".into(),
             app_mode: AppMode::Light,
             note_mode: NoteMode::Light,

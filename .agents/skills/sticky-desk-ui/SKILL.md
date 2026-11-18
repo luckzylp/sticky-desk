@@ -44,8 +44,12 @@ dialogs.
 
 - Width 240px, quiet border-right, compact rows.
 - Section headers are 12px semibold text (`Notebooks`, `Notes`).
-- Section actions are small ghost icon buttons on the right (e.g. `+` for New
-  Notebook, `⋯` for Manage Notebooks); do not add full-width action rows.
+- The Notebooks header has exactly one action: a small ghost `+` for New
+  Notebook. Do not add a `⋯` manager entry or any other header action.
+- Notebooks have no right-click context menu. Rename and delete are the two
+  inline row icons on non-Default notebooks only.
+- `Default` is protected: it never shows rename/delete icons, and the rename
+  and delete dialogs return early for it.
 - Navigation rows use the custom `nav_item` in `src/app/explorer.rs`:
   - fixed icon lane on the left, label immediately after it;
   - 30px high, 8px horizontal padding, 4px radius;
