@@ -44,7 +44,7 @@ fn note_options(
         window_background: WindowBackgroundAppearance::Transparent,
         app_id: Some("sticky-desk".into()),
         icon: app_icon(),
-        window_min_size: Some(size(px(240.), px(240.))),
+        window_min_size: Some(size(px(200.), px(32.))),
         window_decorations: Some(WindowDecorations::Client),
         ..Default::default()
     }

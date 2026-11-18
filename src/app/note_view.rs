@@ -3,21 +3,22 @@ use super::windows;
 use crate::model::*;
 use crate::theme;
 use gpui_kit::assets::IconName;
-use gpui_kit::base::input::{TextDecoration, TextDecorationCollection};
+use gpui_kit::base::input::TextDecorationCollection;
 use gpui_kit::component::{
-    Sizable as _, WindowExt as _,
+    ActiveTheme as _, Sizable as _, WindowExt as _,
     button::{Button, ButtonVariants},
     dialog::{DialogClose, DialogFooter},
     h_flex,
     input::{Editor, EditorState, Input, InputEvent, InputState},
+    menu::{DropdownMenu as _, PopupMenu, PopupMenuItem},
     text::TextView,
     v_flex,
 };
 use gpui_kit::{
-    App, AppContext as _, ClickEvent, Context, Corners, Entity, FocusHandle, FontStyle, FontWeight,
-    HighlightStyle, InteractiveElement as _, IntoElement, MouseButton, ParentElement as _, Render,
-    SharedString, StatefulInteractiveElement as _, StrikethroughStyle, Styled as _, Subscription,
-    UnderlineStyle, Window, div, prelude::FluentBuilder as _, px,
+    App, AppContext as _, ClickEvent, Context, Corners, Entity, FocusHandle,
+    InteractiveElement as _, IntoElement, MouseButton, ParentElement as _, Render, SharedString,
+    StatefulInteractiveElement as _, Styled as _, Subscription, Window, div,
+    prelude::FluentBuilder as _, px,
 };
 
 pub struct NoteView {
@@ -74,25 +75,9 @@ impl NoteView {
                 if matches!(event, InputEvent::Change) {
                     let text = state.read(cx).value().to_string();
                     if text != this.last_text {
-                        let old = this.last_text.clone();
                         this.last_text = text.clone();
                         let id = this.note_id;
-                        let mut doc = this
-                            .model
-                            .read(cx)
-                            .note(id)
-                            .map(|n| n.doc.clone())
-                            .unwrap_or_default();
-                        doc.adjust_spans(&old, &text);
-                        doc.ensure_paras();
-                        this.apply_decorations(&doc, cx);
-                        this.model.update(cx, |m, cx| {
-                            m.mutate_note(id, |note| {
-                                note.doc = doc;
-                                note.updated = now_ole();
-                            });
-                            cx.notify();
-                        });
+                        this.model.update(cx, |m, _| m.update_doc_text(id, text));
                     }
                 }
             },
@@ -162,144 +147,40 @@ impl NoteView {
         });
     }
 
-    fn apply_decorations(&mut self, doc: &NoteDoc, cx: &mut Context<Self>) {
-        if doc.markdown {
-            self.decorations.set(Vec::new(), cx);
-        } else {
-            self.decorations.set(build_decorations(doc), cx);
-        }
-    }
-
-    fn selection_or_line(&self, doc: &NoteDoc, cx: &App) -> (usize, usize) {
-        let range = self.editor.read(cx).selected_range();
-        if range.start != range.end {
-            let len = doc.text.len();
-            (range.start.min(len), range.end.min(len))
-        } else {
-            let len = doc.text.len();
-            doc.line_range(range.start.min(len))
-        }
+    fn apply_decorations(&mut self, _doc: &NoteDoc, cx: &mut Context<Self>) {
+        self.decorations.set(Vec::new(), cx);
     }
 
     fn format_bool(&mut self, which: u8, window: &mut Window, cx: &mut Context<Self>) {
-        let id = self.note_id;
-        let mut doc = self
-            .model
-            .read(cx)
-            .note(id)
-            .map(|n| n.doc.clone())
-            .unwrap_or_default();
-        if doc.markdown {
-            let (p, s) = match which {
-                0 => ("**", "**"),
-                1 => ("*", "*"),
-                2 => ("<u>", "</u>"),
-                _ => ("~~", "~~"),
-            };
-            self.markdown_wrap(p, s, window, cx);
-            return;
-        }
-        let (start, end) = self.selection_or_line(&doc, cx);
-        if start >= end {
-            return;
-        }
-        let style = doc.style_at(start);
-        let value = match which {
-            0 => !style.bold,
-            1 => !style.italic,
-            2 => !style.underline,
-            _ => !style.strike,
+        let (p, s) = match which {
+            0 => ("**", "**"),
+            1 => ("*", "*"),
+            2 => ("<u>", "</u>"),
+            _ => ("~~", "~~"),
         };
-        doc.apply_style(start, end, move |s| match which {
-            0 => s.bold = value,
-            1 => s.italic = value,
-            2 => s.underline = value,
-            _ => s.strike = value,
-        });
-        self.persist_doc(doc, cx);
-        let _ = window;
-        window.focus(&self.focus_handle, cx);
+        self.markdown_wrap(p, s, window, cx);
     }
 
     fn clear_formatting(&mut self, window: &mut Window, cx: &mut Context<Self>) {
-        let id = self.note_id;
-        let mut doc = self
-            .model
-            .read(cx)
-            .note(id)
-            .map(|n| n.doc.clone())
-            .unwrap_or_default();
-        if doc.markdown {
-            self.markdown_clear(window, cx);
-            return;
-        }
-        let (start, end) = self.selection_or_line(&doc, cx);
-        doc.clear_style(start, end);
-        self.persist_doc(doc, cx);
+        self.markdown_clear(window, cx);
     }
 
     fn toggle_line_prefix(&mut self, kind: u8, window: &mut Window, cx: &mut Context<Self>) {
-        let id = self.note_id;
-        let mut doc = self
-            .model
-            .read(cx)
-            .note(id)
-            .map(|n| n.doc.clone())
-            .unwrap_or_default();
-        if doc.markdown {
-            let prefix = match kind {
-                0 => "- ",
-                1 => "1. ",
-                _ => "- [ ] ",
-            };
-            self.markdown_line_prefix(prefix, window, cx);
-            return;
-        }
-        let (start, _) = self.selection_or_line(&doc, cx);
-        let line_start = doc.line_start(doc.line_index(start));
-        let line_end = doc.line_end(doc.line_index(start));
-        let line = doc.text[line_start..line_end].to_string();
-        let prefixes = ["• ", "1. ", "☐ ", "☑ "];
-        let already = prefixes.iter().any(|p| line.starts_with(p));
-        let mut new_line = line.clone();
-        for p in prefixes {
-            if let Some(rest) = line.strip_prefix(p) {
-                new_line = rest.to_string();
-            }
-        }
-        if !already {
-            new_line = match kind {
-                0 => format!("• {new_line}"),
-                1 => format!("1. {new_line}"),
-                _ => format!("☐ {new_line}"),
-            };
-        }
-        let old = doc.text.clone();
-        doc.text.replace_range(line_start..line_end, &new_line);
-        let new_text = doc.text.clone();
-        doc.adjust_spans(&old, &new_text);
-        self.persist_doc(doc, cx);
+        let prefix = match kind {
+            0 => "- ",
+            1 => "1. ",
+            _ => "- [ ] ",
+        };
+        self.markdown_line_prefix(prefix, window, cx);
     }
 
     fn set_note_align(&mut self, align: Align, window: &mut Window, cx: &mut Context<Self>) {
-        let id = self.note_id;
-        let mut doc = self
-            .model
-            .read(cx)
-            .note(id)
-            .map(|n| n.doc.clone())
-            .unwrap_or_default();
-        if doc.markdown {
-            let value = match align {
-                Align::Left => "left",
-                Align::Center => "center",
-                Align::Right => "right",
-            };
-            self.markdown_wrap(&format!("<div align=\"{value}\">"), "</div>", window, cx);
-            return;
-        }
-        doc.align = align;
-        self.persist_doc(doc, cx);
+        let value = match align {
+            Align::Left => "left",
+            Align::Center => "center",
+            Align::Right => "right",
+        };
+        self.markdown_wrap(&format!("<div align=\"{value}\">"), "</div>", window, cx);
     }
 
     fn persist_doc(&mut self, doc: NoteDoc, cx: &mut Context<Self>) {
@@ -350,7 +231,6 @@ impl NoteView {
         window: &mut Window,
         cx: &mut Context<Self>,
     ) {
-        let old = self.editor.read(cx).value().to_string();
         self.last_text = new_text.clone();
         self.editor.update(cx, |state, cx| {
             state.set_value(new_text.clone(), window, cx);
@@ -363,10 +243,25 @@ impl NoteView {
             .note(id)
             .map(|n| n.doc.clone())
             .unwrap_or_default();
-        doc.adjust_spans(&old, &new_text);
-        doc.markdown = true;
+        doc.text = new_text;
         self.persist_doc(doc, cx);
         window.focus(&self.focus_handle, cx);
+    }
+
+    fn expand(&mut self, window: &mut Window) {
+        if !self.collapsed {
+            return;
+        }
+        let height = if self.expanded_height > 80 {
+            self.expanded_height
+        } else {
+            240
+        };
+        self.collapsed = false;
+        window.resize(gpui_kit::Size {
+            width: window.bounds().size.width,
+            height: px(height as f32),
+        });
     }
 
     fn markdown_wrap(
@@ -539,66 +434,7 @@ impl NoteView {
     }
 
     fn color_dialog(&mut self, highlight: bool, window: &mut Window, cx: &mut Context<Self>) {
-        let id = self.note_id;
-        let model = self.model.clone();
-        let decorations = self.decorations.clone();
-        let doc = self
-            .model
-            .read(cx)
-            .note(id)
-            .map(|n| n.doc.clone())
-            .unwrap_or_default();
-        if doc.markdown {
-            self.markdown_color_dialog(highlight, window, cx);
-            return;
-        }
-        let (start, end) = self.selection_or_line(&doc, cx);
-        window.open_dialog(cx, move |dialog, _window, _cx| {
-            let decorations = decorations.clone();
-            let mut choices = if highlight {
-                vec![
-                    0xFFF3A0, 0xFFD6A5, 0xFFB3BA, 0xBAE1FF, 0xBAFFC9, 0xE0BBE4, 0xFFDFBA, 0xD4F0F0,
-                ]
-            } else {
-                vec![
-                    0x1A1A1A, 0xEEEEEE, 0xC0392B, 0xE67E22, 0xF1C40F, 0x27AE60, 0x2980B9, 0x8E44AD,
-                ]
-            };
-            let mut row = h_flex().gap_1();
-            for (i, c) in choices.drain(..).chain(std::iter::once(0)).enumerate() {
-                let model = model.clone();
-                let dec = decorations.clone();
-                row = row.child(
-                    Button::new(format!("color-choice-{highlight}-{i}"))
-                        .w(px(26.))
-                        .h(px(26.))
-                        .p_0()
-                        .when(c != 0, |b| b.bg(theme::rgba(c)))
-                        .when(c == 0, |b| b.label("×"))
-                        .on_click(move |_, window: &mut Window, cx: &mut App| {
-                            let value = if c == 0 { None } else { Some(c) };
-                            let decorations = dec.clone();
-                            model.update(cx, |m, cx| {
-                                let mut doc = m.note(id).map(|n| n.doc.clone()).unwrap_or_default();
-                                doc.apply_style(start, end, move |s| {
-                                    if highlight {
-                                        s.highlight = value;
-                                    } else {
-                                        s.color = value;
-                                    }
-                                });
-                                decorations.set(build_decorations(&doc), cx);
-                                m.set_doc(id, doc, None);
-                                cx.notify();
-                            });
-                            window.close_dialog(cx);
-                        }),
-                );
-            }
-            dialog
-                .title(if highlight { "Highlight" } else { "Font Color" })
-                .child(row)
-        });
+        self.markdown_color_dialog(highlight, window, cx);
     }
 
     fn find_replace_dialog(&mut self, window: &mut Window, cx: &mut Context<Self>) {
@@ -674,8 +510,8 @@ impl NoteView {
                         let decorations = dec_replace.clone();
                         m_replace_state.update(cx, |m, cx| {
                             let mut doc = m.note(id).map(|n| n.doc.clone()).unwrap_or_default();
-                            doc.adjust_spans(&hay, &new_text);
-                            decorations.set(build_decorations(&doc), cx);
+                            doc.text = new_text.clone();
+                            decorations.set(Vec::new(), cx);
                             m.set_doc(id, doc, None);
                             cx.notify();
                         });
@@ -717,8 +553,8 @@ impl NoteView {
                     let decorations = dec_all.clone();
                     m_all_state.update(cx, |m, cx| {
                         let mut doc = m.note(id).map(|n| n.doc.clone()).unwrap_or_default();
-                        doc.adjust_spans(&hay, &new_text);
-                        decorations.set(build_decorations(&doc), cx);
+                        doc.text = new_text.clone();
+                        decorations.set(Vec::new(), cx);
                         m.set_doc(id, doc, None);
                         cx.notify();
                     });
@@ -744,408 +580,12 @@ impl NoteView {
         });
         self.match_case = match_case;
     }
-
-    fn show_menu(&mut self, window: &mut Window, cx: &mut Context<Self>) {
-        let Some(note) = self.note(cx) else { return };
-        let model = self.model.clone();
-        let id = self.note_id;
-        let starred = note.starred;
-        let locked = note.locked;
-        let aot = note.aot;
-        let _color = note.color;
-        let opacity = note.opacity;
-        let title = note.title.clone();
-        let notebook = note.notebook.clone();
-        let trashed = note.is_trashed();
-        let palette = self.model.read(cx).settings.note_color_pal.clone();
-        let notebooks = self.model.read(cx).notebooks_with_default();
-        window.open_dialog(cx, move |dialog, _window, _cx| {
-            let m_new = model.clone();
-            let new_note = Button::new("mn-new")
-                .small()
-                .icon(IconName::Plus)
-                .label("New Note")
-                .on_click(move |_, _, cx: &mut App| {
-                    let id = m_new.update(cx, |m, _| m.create_note(None, None));
-                    windows::open_note_window(cx, m_new.clone(), id);
-                });
-            let m_dup = model.clone();
-            let duplicate = Button::new("mn-dup")
-                .small()
-                .icon(IconName::Copy)
-                .label("Duplicate")
-                .on_click(move |_, _, cx: &mut App| {
-                    if let Some(new_id) = m_dup.update(cx, |m, _| m.duplicate_note(id)) {
-                        windows::open_note_window(cx, m_dup.clone(), new_id);
-                    }
-                });
-            let m_star = model.clone();
-            let star = Button::new("mn-star")
-                .small()
-                .icon(IconName::Star)
-                .label(if starred { "Remove star" } else { "Add star" })
-                .on_click(move |_, _, cx: &mut App| {
-                    m_star.update(cx, |m, cx| {
-                        m.mutate_note(id, |n| n.starred = !n.starred);
-                        cx.notify();
-                    });
-                });
-            let m_lock = model.clone();
-            let lock = Button::new("mn-lock")
-                .small()
-                .icon(IconName::Lock)
-                .label(if locked { "Unlock note" } else { "Lock note" })
-                .on_click(move |_, _, cx: &mut App| {
-                    m_lock.update(cx, |m, cx| {
-                        m.mutate_note(id, |n| n.locked = !n.locked);
-                        cx.notify();
-                    });
-                });
-            let m_aot = model.clone();
-            let aot_button = Button::new("mn-aot")
-                .small()
-                .icon(IconName::Pin)
-                .label(if aot {
-                    "Always on top: On"
-                } else {
-                    "Always on top: Off"
-                })
-                .on_click(move |_, _, cx: &mut App| {
-                    m_aot.update(cx, |m, cx| {
-                        m.mutate_note(id, |n| n.aot = !n.aot);
-                        cx.notify();
-                    });
-                });
-            let m_fit = model.clone();
-            let fit = Button::new("mn-fit")
-                .small()
-                .icon(IconName::Move)
-                .label("Fit to content")
-                .on_click(move |_, _, cx: &mut App| {
-                    m_fit.update(cx, |m, cx| {
-                        m.mutate_note(id, |n| {
-                            let lines = n.doc.text.split('\n').count().max(1) as i32;
-                            n.height = (64 + lines * 24).clamp(240, 1000);
-                        });
-                        cx.notify();
-                    });
-                    windows::resize_note_window(cx, m_fit.clone(), id);
-                });
-            let m_alarm = model.clone();
-            let _alarm_button = Button::new("mn-alarm")
-                .small()
-                .icon(IconName::AlarmClock)
-                .label("Alarm...")
-                .on_click(move |_, window: &mut Window, cx: &mut App| {
-                    let m = m_alarm.clone();
-                    window.open_dialog(cx, move |dialog, _window, _cx| {
-                        let mut col = v_flex().gap_1();
-                        for (label, minutes) in [
-                            ("5 minutes", 5i64),
-                            ("10 minutes", 10),
-                            ("30 minutes", 30),
-                            ("1 hour", 60),
-                            ("1 day", 1440),
-                        ] {
-                            let m = m.clone();
-                            col = col.child(
-                                Button::new(format!("menu-alarm-{minutes}"))
-                                    .small()
-                                    .label(format!("Remind in {label}"))
-                                    .on_click(move |_, window: &mut Window, cx: &mut App| {
-                                        m.update(cx, |m, cx| {
-                                            m.mutate_note(id, |n| {
-                                                let target = chrono::Local::now().naive_local()
-                                                    + chrono::Duration::minutes(minutes);
-                                                n.alarm = datetime_to_ole(target);
-                                                n.alarm_current = 0.0;
-                                            });
-                                            cx.notify();
-                                        });
-                                        window.close_dialog(cx);
-                                    }),
-                            );
-                        }
-                        let m_clear = m.clone();
-                        col = col.child(
-                            Button::new("menu-alarm-clear")
-                                .small()
-                                .label("Clear alarm")
-                                .on_click(move |_, window: &mut Window, cx: &mut App| {
-                                    m_clear.update(cx, |m, cx| {
-                                        m.mutate_note(id, |n| {
-                                            n.alarm = 0.0;
-                                            n.alarm_current = 0.0;
-                                        });
-                                        cx.notify();
-                                    });
-                                    window.close_dialog(cx);
-                                }),
-                        );
-                        dialog.title("Alarm").w(px(320.)).child(col)
-                    });
-                });
-            let maximize = Button::new("mn-max")
-                .small()
-                .icon(IconName::Maximize)
-                .label("Maximize")
-                .on_click(|_, window: &mut Window, _| window.zoom_window());
-            let minimize = Button::new("mn-min")
-                .small()
-                .icon(IconName::Minus)
-                .label("Minimize")
-                .on_click(|_, window: &mut Window, _| window.minimize_window());
-            let m_others = model.clone();
-            let hide_others = Button::new("mn-hide-others")
-                .small()
-                .icon(IconName::EyeOff)
-                .label("Hide Others")
-                .on_click(move |_, window: &mut Window, cx: &mut App| {
-                    let handles: Vec<_> = m_others
-                        .read(cx)
-                        .note_windows
-                        .iter()
-                        .filter(|(nid, _)| **nid != id)
-                        .map(|(_, h)| *h)
-                        .collect();
-                    for h in handles {
-                        let _ = h.update(cx, |_, window, _| window.remove_window());
-                    }
-                    m_others.update(cx, |m, _| {
-                        for (nid, _) in m.note_windows.iter() {
-                            if *nid != id {
-                                if let Some(n) = m.notes.iter_mut().find(|n| n.id == *nid) {
-                                    n.visible = false;
-                                }
-                            }
-                        }
-                        m.note_windows.retain(|nid, _| *nid == id);
-                    });
-                    let _ = window;
-                });
-            let m_export = model.clone();
-            let export = Button::new("mn-export")
-                .small()
-                .icon(IconName::Download)
-                .label("Export as text...")
-                .on_click(move |_, _, cx: &mut App| {
-                    let (text, title, md) = m_export
-                        .read(cx)
-                        .note(id)
-                        .map(|n| (n.doc.text.clone(), n.title.clone(), n.doc.markdown))
-                        .unwrap_or_default();
-                    let dir = dirs::document_dir().unwrap_or_else(|| std::env::temp_dir());
-                    let path = dir.join(format!(
-                        "{}.{}",
-                        crate::util::safe_filename(&title),
-                        if md { "md" } else { "txt" }
-                    ));
-                    let _ = std::fs::write(&path, text);
-                    m_export.update(cx, |m, _| {
-                        m.toast_error(format!("Exported to {}", path.display()))
-                    });
-                });
-            let m_print = model.clone();
-            let print = Button::new("mn-print")
-                .small()
-                .icon(IconName::Printer)
-                .label("Print...")
-                .on_click(move |_, _, cx: &mut App| {
-                    let (title, text) = m_print
-                        .read(cx)
-                        .note(id)
-                        .map(|n| (n.title.clone(), n.doc.text.clone()))
-                        .unwrap_or_default();
-                    if !crate::util::print_text(&title, &text) {
-                        m_print.update(cx, |m, _| {
-                            m.toast_error("Printing is not available (lp command missing)")
-                        });
-                    }
-                });
-            let m_locate = model.clone();
-            let locate = Button::new("mn-locate")
-                .small()
-                .icon(IconName::Search)
-                .label("Locate in Explorer")
-                .on_click(move |_, _, cx: &mut App| {
-                    m_locate.update(cx, |m, _| {
-                        m.selection = vec![id];
-                        m.explorer_page = super::model::ExplorerPage::AllNotes;
-                    });
-                    windows::open_explorer_window(cx, m_locate.clone());
-                });
-            let m_hide = model.clone();
-            let hide = Button::new("mn-hide")
-                .small()
-                .icon(IconName::Minus)
-                .label("Hide")
-                .on_click(move |_, window: &mut Window, cx: &mut App| {
-                    m_hide.update(cx, |m, _| {
-                        m.mutate_note(id, |n| n.visible = false);
-                    });
-                    window.remove_window();
-                });
-            let m_trash = model.clone();
-            let trash = Button::new("mn-trash")
-                .small()
-                .icon(IconName::Trash)
-                .label("Delete note")
-                .on_click(move |_, window: &mut Window, cx: &mut App| {
-                    m_trash.update(cx, |m, cx| {
-                        m.trash_note(id);
-                        cx.notify();
-                    });
-                    window.remove_window();
-                });
-
-            let mut colors = v_flex().gap_1();
-            let mut color_row = h_flex().gap_1();
-            for (i, c) in super::model::color_choices_for(&palette)
-                .into_iter()
-                .enumerate()
-            {
-                if i > 0 && i % 9 == 0 {
-                    colors = colors.child(color_row);
-                    color_row = h_flex().gap_1();
-                }
-                let m_color = model.clone();
-                color_row = color_row.child(
-                    Button::new(("mn-color", i))
-                        .w(px(24.))
-                        .h(px(24.))
-                        .p_0()
-                        .bg(theme::rgba(c))
-                        .on_click(move |_, _, cx: &mut App| {
-                            m_color.update(cx, |m, cx| {
-                                m.mutate_note(id, |n| n.color = c);
-                                cx.notify();
-                            });
-                        }),
-                );
-            }
-            let colors = colors.child(color_row);
-
-            let mut opacity_row = h_flex().gap_1();
-            for pct in [100u8, 90, 80, 70, 60, 50, 40, 30, 20, 10] {
-                let m_op = model.clone();
-                opacity_row = opacity_row.child(
-                    Button::new(("mn-opacity", pct as usize))
-                        .small()
-                        .when(pct == opacity, |b| b.primary())
-                        .label(format!("{pct}%"))
-                        .on_click(move |_, _, cx: &mut App| {
-                            m_op.update(cx, |m, cx| {
-                                m.mutate_note(id, |n| n.opacity = pct);
-                                cx.notify();
-                            });
-                        }),
-                );
-            }
-            let mut size_row = h_flex().gap_1();
-            for s in 1..=6 {
-                let m_size = model.clone();
-                size_row = size_row.child(
-                    Button::new(("mn-size", s as usize))
-                        .small()
-                        .label(format!("Size {s}"))
-                        .on_click(move |_, _, cx: &mut App| {
-                            let (w, h) = note_size_dims(s);
-                            m_size.update(cx, |m, cx| {
-                                m.mutate_note(id, |n| {
-                                    n.width = w;
-                                    n.height = h;
-                                });
-                                cx.notify();
-                            });
-                            windows::resize_note_window(cx, m_size.clone(), id);
-                        }),
-                );
-            }
-            let mut nb_col = v_flex().gap_1();
-            for (i, name) in notebooks.iter().enumerate() {
-                let m_nb = model.clone();
-                let name = name.clone();
-                nb_col = nb_col.child(
-                    Button::new(("mn-nb", i))
-                        .small()
-                        .label(name.clone())
-                        .on_click(move |_, _, cx: &mut App| {
-                            let name = name.clone();
-                            m_nb.update(cx, |m, cx| {
-                                m.move_note(id, &name);
-                                cx.notify();
-                            });
-                        }),
-                );
-            }
-
-            let close_title = Button::new("mn-close-title")
-                .ghost()
-                .small()
-                .label("✕")
-                .w(px(28.))
-                .h(px(24.))
-                .p_0()
-                .on_click(|_, window, cx| window.close_dialog(cx));
-            let title_row = if crate::app::chrome::controls_on_left() {
-                h_flex()
-                    .w_full()
-                    .items_center()
-                    .gap_2()
-                    .child(close_title)
-                    .child(div().flex_1().child(title.clone()))
-            } else {
-                h_flex()
-                    .w_full()
-                    .items_center()
-                    .gap_2()
-                    .child(div().flex_1().child(title.clone()))
-                    .child(close_title)
-            };
-            dialog
-                .title(title_row)
-                .w(px(420.))
-                .close_button(false)
-                .child(
-                    v_flex()
-                        .gap_1()
-                        .child(new_note)
-                        .child(duplicate)
-                        .child(star)
-                        .child(lock)
-                        .child(aot_button)
-                        .child(fit)
-                        .child(maximize)
-                        .child(minimize)
-                        .child(hide_others)
-                        .child(
-                            div()
-                                .text_xs()
-                                .pt_2()
-                                .child(format!("Notebook: {notebook}")),
-                        )
-                        .child(nb_col)
-                        .child(div().text_xs().pt_2().child("Color"))
-                        .child(colors)
-                        .child(div().text_xs().pt_2().child("Opacity"))
-                        .child(opacity_row)
-                        .child(div().text_xs().pt_2().child("Size"))
-                        .child(size_row)
-                        .child(export)
-                        .child(print)
-                        .child(locate)
-                        .child(hide)
-                        .child(trash),
-                )
-        });
-        let _ = trashed;
-    }
 }
 
 impl Render for NoteView {
     fn render(&mut self, window: &mut Window, cx: &mut Context<Self>) -> impl IntoElement {
         let note = self.note(cx);
-        let (title, stored_color, opacity, starred, locked, _alarm, _aot) = note
+        let (title, stored_color, opacity, _starred, locked, _alarm, _aot) = note
             .as_ref()
             .map(|n| {
                 (
@@ -1216,27 +656,54 @@ impl Render for NoteView {
                 b.child(note_controls(id, fg, cx))
             })
             .child(title_area)
+            .when(self.collapsed, |b| {
+                b.child(
+                    Button::new(("note-expand", id as u64))
+                        .ghost()
+                        .xsmall()
+                        .icon(IconName::Maximize)
+                        .on_click(cx.listener(|this, _, window, cx| {
+                            this.expand(window);
+                            cx.notify();
+                        })),
+                )
+            })
             .child(
-                Button::new(("star", id as u64))
+                Button::new(("note-preview", id as u64))
                     .ghost()
                     .small()
-                    .icon(IconName::Star)
-                    .when(starred, |b| b.text_color(gpui_kit::rgb(0xFFB800)))
+                    .icon(IconName::Eye)
+                    .when(self.preview, |b| b.text_color(cx.theme().primary))
                     .on_click(cx.listener(|this, _, _, cx| {
-                        let id = this.note_id;
-                        this.model.update(cx, |m, cx| {
-                            m.mutate_note(id, |n| n.starred = !n.starred);
-                            cx.notify();
-                        });
+                        this.preview = !this.preview;
+                        cx.notify();
                     })),
             )
-            .child(
+            .child({
+                let menu_model = self.model.clone();
+                let weak_view = cx.entity().downgrade();
+                let self_preview = self.preview;
+                let self_collapsed = self.collapsed;
                 Button::new(("menu", id as u64))
                     .ghost()
                     .small()
                     .icon(IconName::Ellipsis)
-                    .on_click(cx.listener(|this, _, window, cx| this.show_menu(window, cx))),
-            );
+                    .dropdown_menu(move |menu, window, cx| {
+                        build_note_menu(
+                            menu,
+                            id,
+                            menu_model.clone(),
+                            weak_view.clone(),
+                            self_preview,
+                            self_collapsed,
+                            window,
+                            cx,
+                        )
+                    })
+            })
+            .when(!crate::app::chrome::controls_on_left(), |b| {
+                b.child(note_controls(id, fg, cx))
+            });
 
         let font_size = self.font_size(cx);
         let font_name = self.font_name(cx);
@@ -1246,62 +713,7 @@ impl Render for NoteView {
             .note(id)
             .map(|n| n.doc.align)
             .unwrap_or(Align::Left);
-        // Keep font colour / find / MD / preview exactly centred while the note
-        // resizes. The remaining formatting controls live on a second row so
-        // the centred group never drifts when the note becomes narrow.
         let window_width = window.bounds().size.width.as_f32();
-        let center_row = h_flex()
-            .w_full()
-            .h(px(28.))
-            .items_center()
-            .justify_center()
-            .gap_0p5()
-            .child(fmt_button(
-                "font-color",
-                IconName::Palette,
-                cx.listener(|this, _, window, cx| this.color_dialog(false, window, cx)),
-            ))
-            .child(fmt_button(
-                "find",
-                IconName::Search,
-                cx.listener(|this, _, window, cx| this.find_replace_dialog(window, cx)),
-            ))
-            .child(
-                Button::new("md-toggle")
-                    .ghost()
-                    .xsmall()
-                    .label(
-                        if self
-                            .model
-                            .read(cx)
-                            .note(id)
-                            .map(|n| n.doc.markdown)
-                            .unwrap_or(true)
-                        {
-                            "MD"
-                        } else {
-                            "RTF"
-                        },
-                    )
-                    .on_click(cx.listener(|this, _, _, cx| {
-                        let id = this.note_id;
-                        this.model.update(cx, |m, cx| {
-                            m.mutate_note(id, |n| n.doc.markdown = !n.doc.markdown);
-                            cx.notify();
-                        });
-                    })),
-            )
-            .child(
-                Button::new("preview")
-                    .ghost()
-                    .xsmall()
-                    .icon(IconName::Eye)
-                    .on_click(cx.listener(|this, _, _, cx| {
-                        this.preview = !this.preview;
-                        cx.notify();
-                    })),
-            );
-
         let core_tools = h_flex()
             .gap_0p5()
             .items_center()
@@ -1418,7 +830,6 @@ impl Render for NoteView {
             ))
             .border_b_1()
             .border_color(border)
-            .child(center_row)
             .child(format_row);
 
         let editor = div()
@@ -1551,7 +962,8 @@ impl Render for NoteView {
                     .shadow_lg()
                     .child(title_panel)
                     .when(!self.collapsed, |d| {
-                        d.when(!locked, |d| d.child(toolbar)).child(editor)
+                        d.when(!locked && !self.preview, |d| d.child(toolbar))
+                            .child(editor)
                     })
                     .child(
                         div()
@@ -1567,6 +979,390 @@ impl Render for NoteView {
                     ),
             )
     }
+}
+
+fn build_note_menu(
+    menu: PopupMenu,
+    id: i64,
+    model: Entity<AppModel>,
+    view: gpui_kit::WeakEntity<NoteView>,
+    preview: bool,
+    collapsed: bool,
+    window: &mut Window,
+    cx: &mut Context<PopupMenu>,
+) -> PopupMenu {
+    let Some(note) = model.read(cx).note(id).cloned() else {
+        return menu;
+    };
+    let notebooks = model.read(cx).notebooks_with_default();
+    let current_size = (1..=6)
+        .min_by_key(|size| (note_size_dims(*size).0 - note.width).abs())
+        .unwrap_or(3);
+
+    let m = model.clone();
+    let new_note = PopupMenuItem::new("New note")
+        .icon(IconName::Plus)
+        .on_click(move |_, _, cx| {
+            let note_id = m.update(cx, |m, _| m.create_note(None, None));
+            windows::open_note_window(cx, m.clone(), note_id);
+        });
+
+    let m = model.clone();
+    let duplicate = PopupMenuItem::new("Duplicate")
+        .icon(IconName::Copy)
+        .on_click(move |_, _, cx| {
+            if let Some(note_id) = m.update(cx, |m, _| m.duplicate_note(id)) {
+                windows::open_note_window(cx, m.clone(), note_id);
+            }
+        });
+
+    let v = view.clone();
+    let preview_item = PopupMenuItem::new("Preview")
+        .icon(IconName::Eye)
+        .checked(preview)
+        .on_click(move |_, _, cx| {
+            let _ = v.update(cx, |this, cx| {
+                this.preview = !this.preview;
+                cx.notify();
+            });
+        });
+
+    let v = view.clone();
+    let find = PopupMenuItem::new("Find…")
+        .icon(IconName::Search)
+        .on_click(move |_, window, cx| {
+            let v = v.clone();
+            window.defer(cx, move |window, cx| {
+                let _ = v.update(cx, |this, cx| this.find_replace_dialog(window, cx));
+            });
+        });
+
+    let v = view.clone();
+    let collapse = PopupMenuItem::new(if collapsed {
+        "Expand note"
+    } else {
+        "Collapse note"
+    })
+    .icon(if collapsed {
+        IconName::Maximize
+    } else {
+        IconName::Minus
+    })
+    .on_click(move |_, window, cx| {
+        let v = v.clone();
+        let restored = v
+            .read_with(cx, |this, _| {
+                if this.expanded_height > 80 {
+                    this.expanded_height
+                } else {
+                    240
+                }
+            })
+            .unwrap_or(240);
+        let target = if collapsed {
+            let _ = v.update(cx, |this, cx| {
+                this.collapsed = false;
+                cx.notify();
+            });
+            restored
+        } else {
+            let current = window.bounds().size.height.as_f32() as i32;
+            let _ = v.update(cx, |this, cx| {
+                this.collapsed = true;
+                this.expanded_height = current;
+                cx.notify();
+            });
+            32
+        };
+        window.resize(gpui_kit::Size {
+            width: window.bounds().size.width,
+            height: px(target as f32),
+        });
+    });
+
+    let m = model.clone();
+    let v = view.clone();
+    let star_label = if note.starred {
+        "Remove star"
+    } else {
+        "Add star"
+    };
+    let star = PopupMenuItem::new(star_label)
+        .icon(IconName::Star)
+        .checked(note.starred)
+        .on_click(move |_, _, cx| {
+            m.update(cx, |m, _| m.mutate_note(id, |n| n.starred = !n.starred));
+            let _ = v.update(cx, |_, cx| cx.notify());
+        });
+
+    let m = model.clone();
+    let v = view.clone();
+    let lock_label = if note.locked {
+        "Unlock note"
+    } else {
+        "Lock note"
+    };
+    let lock = PopupMenuItem::new(lock_label)
+        .icon(IconName::Lock)
+        .checked(note.locked)
+        .on_click(move |_, _, cx| {
+            m.update(cx, |m, _| m.mutate_note(id, |n| n.locked = !n.locked));
+            let _ = v.update(cx, |_, cx| cx.notify());
+        });
+
+    let m = model.clone();
+    let v = view.clone();
+    let always_on_top = PopupMenuItem::new("Always on top")
+        .icon(IconName::Pin)
+        .checked(note.aot)
+        .on_click(move |_, _, cx| {
+            m.update(cx, |m, _| m.mutate_note(id, |n| n.aot = !n.aot));
+            let _ = v.update(cx, |_, cx| cx.notify());
+        });
+
+    let m = model.clone();
+    let v = view.clone();
+    let initial_color = note.color;
+    let color = PopupMenuItem::new("Color…")
+        .icon(IconName::Palette)
+        .on_click(move |_, window, cx| {
+            let m = m.clone();
+            let v = v.clone();
+            window.defer(cx, move |window, cx| {
+                super::color_wheel::open_color_wheel(
+                    window,
+                    cx,
+                    initial_color,
+                    move |value, cx| {
+                        m.update(cx, |m, _| m.update_note_color(id, value));
+                        let _ = v.update(cx, |_, cx| cx.notify());
+                    },
+                );
+            });
+        });
+
+    let v = view.clone();
+    let font_color = PopupMenuItem::new("Font color…")
+        .icon(IconName::ALargeSmall)
+        .on_click(move |_, window, cx| {
+            let v = v.clone();
+            window.defer(cx, move |window, cx| {
+                let _ = v.update(cx, |this, cx| this.markdown_color_dialog(false, window, cx));
+            });
+        });
+
+    let opacity = note.opacity;
+    let m = model.clone();
+    let opacity_menu = PopupMenu::build(window, cx, move |mut sub, _window, _cx| {
+        for pct in [100u8, 90, 80, 70, 60, 50, 40, 30, 20, 10] {
+            let m = m.clone();
+            sub = sub.item(
+                PopupMenuItem::new(format!("{pct}%"))
+                    .checked(pct == opacity)
+                    .on_click(move |_, _, cx| {
+                        m.update(cx, |m, cx| {
+                            m.mutate_note(id, |n| n.opacity = pct);
+                            cx.notify();
+                        });
+                    }),
+            );
+        }
+        sub
+    });
+    let opacity_item = PopupMenuItem::submenu("Opacity", opacity_menu).icon(IconName::Circle);
+
+    let m = model.clone();
+    let size_menu = PopupMenu::build(window, cx, move |mut sub, _window, _cx| {
+        for (index, label) in ["Tiny", "Small", "Medium", "Large", "X-Large", "Huge"]
+            .into_iter()
+            .enumerate()
+        {
+            let size = index as i32 + 1;
+            let m = m.clone();
+            sub = sub.item(
+                PopupMenuItem::new(label)
+                    .checked(size == current_size)
+                    .on_click(move |_, _, cx| {
+                        let (width, height) = note_size_dims(size);
+                        m.update(cx, |m, cx| {
+                            m.mutate_note(id, |n| {
+                                n.width = width;
+                                n.height = height;
+                            });
+                            cx.notify();
+                        });
+                        windows::resize_note_window(cx, m.clone(), id);
+                    }),
+            );
+        }
+        sub
+    });
+    let size_item = PopupMenuItem::submenu("Size", size_menu).icon(IconName::Scaling);
+
+    let m = model.clone();
+    let current_notebook = note.notebook.clone();
+    let notebook_menu =
+        PopupMenu::build(window, cx, move |mut sub, _window, _cx| {
+            for name in notebooks {
+                let m = m.clone();
+                let selected = name == current_notebook;
+                let target = name.clone();
+                sub = sub.item(PopupMenuItem::new(name).checked(selected).on_click(
+                    move |_, _, cx| {
+                        let target = target.clone();
+                        m.update(cx, |m, cx| {
+                            m.move_note(id, &target);
+                            cx.notify();
+                        });
+                    },
+                ));
+            }
+            sub
+        });
+    let notebook_item = PopupMenuItem::submenu("Notebook", notebook_menu).icon(IconName::Folder);
+
+    let m = model.clone();
+    let fit = PopupMenuItem::new("Fit to content")
+        .icon(IconName::Move)
+        .on_click(move |_, _, cx| {
+            m.update(cx, |m, cx| {
+                m.mutate_note(id, |n| {
+                    let lines = n.doc.text.split('\n').count().max(1) as i32;
+                    n.height = (64 + lines * 24).clamp(240, 1000);
+                });
+                cx.notify();
+            });
+            windows::resize_note_window(cx, m.clone(), id);
+        });
+
+    let maximize = PopupMenuItem::new("Maximize")
+        .icon(IconName::Maximize)
+        .on_click(|_, window, _| window.zoom_window());
+    let minimize = PopupMenuItem::new("Minimize")
+        .icon(IconName::Minus)
+        .on_click(|_, window, _| window.minimize_window());
+
+    let m = model.clone();
+    let v = view.clone();
+    let hide_others = PopupMenuItem::new("Hide others")
+        .icon(IconName::EyeOff)
+        .on_click(move |_, _, cx| {
+            let handles: Vec<_> = m
+                .read(cx)
+                .note_windows
+                .iter()
+                .filter(|(nid, _)| **nid != id)
+                .map(|(_, handle)| *handle)
+                .collect();
+            for handle in handles {
+                let _ = handle.update(cx, |_, window, _| window.remove_window());
+            }
+            m.update(cx, |m, _| {
+                for nid in m.note_windows.keys().copied().collect::<Vec<_>>() {
+                    if nid != id {
+                        if let Some(n) = m.notes.iter_mut().find(|n| n.id == nid) {
+                            n.visible = false;
+                        }
+                    }
+                }
+                m.note_windows.retain(|nid, _| *nid == id);
+            });
+            let _ = v.update(cx, |_, cx| cx.notify());
+        });
+
+    let m = model.clone();
+    let export = PopupMenuItem::new("Export as Markdown…")
+        .icon(IconName::Download)
+        .on_click(move |_, _, cx| {
+            let (text, title) = m
+                .read(cx)
+                .note(id)
+                .map(|n| (n.doc.text.clone(), n.title.clone()))
+                .unwrap_or_default();
+            let dir = dirs::document_dir().unwrap_or_else(|| std::env::temp_dir());
+            let path = dir.join(format!("{}.md", crate::util::safe_filename(&title)));
+            let _ = std::fs::write(&path, text);
+            m.update(cx, |m, _| {
+                m.toast_error(format!("Exported to {}", path.display()))
+            });
+        });
+
+    let m = model.clone();
+    let print = PopupMenuItem::new("Print…")
+        .icon(IconName::Printer)
+        .on_click(move |_, _, cx| {
+            let (title, text) = m
+                .read(cx)
+                .note(id)
+                .map(|n| (n.title.clone(), n.doc.text.clone()))
+                .unwrap_or_default();
+            if !crate::util::print_text(&title, &text) {
+                m.update(cx, |m, _| {
+                    m.toast_error("Printing is not available (lp command missing)")
+                });
+            }
+        });
+
+    let m = model.clone();
+    let locate = PopupMenuItem::new("Locate in Explorer")
+        .icon(IconName::Search)
+        .on_click(move |_, _, cx| {
+            m.update(cx, |m, _| {
+                m.selection = vec![id];
+                m.explorer_page = super::model::ExplorerPage::AllNotes;
+            });
+            windows::open_explorer_window(cx, m.clone());
+        });
+
+    let m = model.clone();
+    let hide = PopupMenuItem::new("Hide note")
+        .icon(IconName::EyeOff)
+        .on_click(move |_, window, cx| {
+            m.update(cx, |m, _| {
+                m.mutate_note(id, |n| n.visible = false);
+            });
+            window.remove_window();
+        });
+
+    let m = model.clone();
+    let delete = PopupMenuItem::new("Delete note")
+        .icon(IconName::Trash)
+        .on_click(move |_, window, cx| {
+            m.update(cx, |m, cx| {
+                m.trash_note(id);
+                cx.notify();
+            });
+            window.remove_window();
+        });
+
+    menu.min_w(px(230.))
+        .item(new_note)
+        .item(duplicate)
+        .item(preview_item)
+        .item(find)
+        .item(collapse)
+        .separator()
+        .item(star)
+        .item(lock)
+        .item(always_on_top)
+        .separator()
+        .item(color)
+        .item(font_color)
+        .item(opacity_item)
+        .item(size_item)
+        .item(notebook_item)
+        .separator()
+        .item(fit)
+        .item(maximize)
+        .item(minimize)
+        .item(hide_others)
+        .separator()
+        .item(export)
+        .item(print)
+        .item(locate)
+        .separator()
+        .item(hide)
+        .item(delete)
 }
 
 fn note_controls(id: i64, fg: gpui_kit::Hsla, cx: &mut Context<NoteView>) -> impl IntoElement {
@@ -1590,17 +1386,7 @@ fn note_controls(id: i64, fg: gpui_kit::Hsla, cx: &mut Context<NoteView>) -> imp
                 .ghost()
                 .xsmall()
                 .icon(IconName::Minus)
-                .on_click(cx.listener(|this, _, window, cx| {
-                    if !this.collapsed {
-                        this.expanded_height = window.bounds().size.height.as_f32() as i32;
-                        window.resize(gpui_kit::Size {
-                            width: window.bounds().size.width,
-                            height: px(32.),
-                        });
-                        this.collapsed = true;
-                        cx.notify();
-                    }
-                })),
+                .on_click(|_, window, _| window.minimize_window()),
             _ => Button::new(("note-max", id as u64))
                 .ghost()
                 .xsmall()
@@ -1610,46 +1396,6 @@ fn note_controls(id: i64, fg: gpui_kit::Hsla, cx: &mut Context<NoteView>) -> imp
         items.push(button);
     }
     h_flex().gap_0p5().items_center().children(items)
-}
-
-fn build_decorations(doc: &NoteDoc) -> Vec<TextDecoration> {
-    let mut decorations = Vec::new();
-    if doc.markdown {
-        return decorations;
-    }
-    for span in &doc.spans {
-        if span.style.is_default() {
-            continue;
-        }
-        let mut style = HighlightStyle::default();
-        if let Some(c) = span.style.color {
-            style.color = Some(theme::hsla(c, 1.0));
-        }
-        if span.style.bold {
-            style.font_weight = Some(FontWeight::BOLD);
-        }
-        if span.style.italic {
-            style.font_style = Some(FontStyle::Italic);
-        }
-        if span.style.underline {
-            style.underline = Some(UnderlineStyle {
-                thickness: px(1.),
-                color: Some(theme::hsla(span.style.color.unwrap_or(0x8A6A00), 0.9)),
-                wavy: false,
-            });
-        }
-        if span.style.strike {
-            style.strikethrough = Some(StrikethroughStyle {
-                thickness: px(1.),
-                color: Some(theme::hsla(span.style.color.unwrap_or(0x666666), 0.9)),
-            });
-        }
-        if let Some(hl) = span.style.highlight {
-            style.background_color = Some(theme::hsla(hl, 0.62));
-        }
-        decorations.push(TextDecoration::new(span.start..span.end, style));
-    }
-    decorations
 }
 
 fn fmt_button(

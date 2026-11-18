@@ -2,6 +2,7 @@ pub mod about;
 pub mod actions;
 pub mod alarm;
 pub mod chrome;
+pub mod color_wheel;
 pub mod explorer;
 pub mod model;
 pub mod note_view;

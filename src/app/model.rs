@@ -2,7 +2,7 @@ use crate::i18n::Translator;
 use crate::model::*;
 use crate::store::{DB_FILE, Store, default_db_path, load_settings, save_settings, settings_file};
 use gpui_kit::AnyWindowHandle;
-use std::collections::HashMap;
+use std::collections::{HashMap, HashSet};
 use std::path::PathBuf;
 
 pub struct AppModel {
@@ -22,6 +22,8 @@ pub struct AppModel {
     pub last_error: Option<String>,
     pub selection: Vec<i64>,
     pub explorer_page: ExplorerPage,
+    /// Notes whose text changed since the last database flush.
+    pub dirty_docs: HashSet<i64>,
 }
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -58,6 +60,7 @@ impl AppModel {
             last_error: None,
             selection: Vec::new(),
             explorer_page: ExplorerPage::AllNotes,
+            dirty_docs: HashSet::new(),
         };
         model.open_store();
         model
@@ -208,6 +211,40 @@ impl AppModel {
         } else {
             false
         }
+    }
+
+    /// Update a note's Markdown text in memory. The database write is batched
+    /// by the background flush so typing never blocks on SQLite.
+    pub fn update_doc_text(&mut self, id: i64, text: String) {
+        if let Some(note) = self.notes.iter_mut().find(|n| n.id == id) {
+            note.doc.text = text;
+            note.updated = now_ole();
+            self.dirty_docs.insert(id);
+        }
+    }
+
+    /// Update a note colour in memory; persistence is batched with text saves.
+    pub fn update_note_color(&mut self, id: i64, color: u32) {
+        if let Some(note) = self.notes.iter_mut().find(|n| n.id == id) {
+            note.color = color;
+            self.dirty_docs.insert(id);
+        }
+    }
+
+    /// Write pending note texts and return true when anything was flushed.
+    pub fn flush_dirty_docs(&mut self) -> bool {
+        if self.dirty_docs.is_empty() {
+            return false;
+        }
+        let ids: Vec<i64> = self.dirty_docs.drain().collect();
+        if let Some(store) = self.store.as_ref() {
+            for id in ids {
+                if let Some(note) = self.notes.iter().find(|n| n.id == id) {
+                    let _ = store.save_note(note);
+                }
+            }
+        }
+        true
     }
 
     pub fn save_settings(&self) {
@@ -399,16 +436,5 @@ impl AppModel {
             .filter(|n| n.alarm > 0.0 && n.alarm <= now)
             .map(|n| n.id)
             .collect()
-    }
-}
-
-pub fn color_choices_for(palette: &str) -> Vec<u32> {
-    match palette {
-        "Classic" => crate::theme::classic_colors(),
-        "Pastel" => crate::theme::pastel_palette(),
-        _ => crate::theme::standard_palette()
-            .into_iter()
-            .map(|c| c.base)
-            .collect(),
     }
 }

@@ -105,8 +105,6 @@ pub struct NoteDoc {
     pub align: Align,
     #[serde(default)]
     pub line_spacing: f32,
-    #[serde(default = "default_true")]
-    pub markdown: bool,
 }
 
 fn default_true() -> bool {
@@ -123,7 +121,6 @@ impl Default for NoteDoc {
             font_size: 0,
             align: Align::Left,
             line_spacing: 1.0,
-            markdown: true,
         }
     }
 }
@@ -140,7 +137,6 @@ impl NoteDoc {
             font_size: 0,
             align: Align::Left,
             line_spacing: 1.0,
-            markdown: true,
         }
     }
 
@@ -160,86 +156,6 @@ impl NoteDoc {
         self.spans.sort_by_key(|s| (s.start, s.end));
         self.spans.retain(|s| !s.style.is_default());
     }
-
-    pub fn style_at(&self, index: usize) -> InlineStyle {
-        for span in &self.spans {
-            if span.start <= index && index < span.end {
-                return span.style.clone();
-            }
-        }
-        InlineStyle::default()
-    }
-
-    pub fn apply_style(&mut self, start: usize, end: usize, f: impl Fn(&mut InlineStyle) + Copy) {
-        if start >= end {
-            return;
-        }
-        let len = self.text.len();
-        let start = start.min(len);
-        let end = end.min(len);
-        let mut spans = Vec::new();
-        for span in &self.spans {
-            if span.end <= start || span.start >= end {
-                spans.push(span.clone());
-                continue;
-            }
-            if span.start < start {
-                spans.push(NoteSpan {
-                    start: span.start,
-                    end: start,
-                    style: span.style.clone(),
-                });
-            }
-            if span.end > end {
-                spans.push(NoteSpan {
-                    start: end,
-                    end: span.end,
-                    style: span.style.clone(),
-                });
-            }
-        }
-        let mut style = self.style_at(start);
-        f(&mut style);
-        spans.push(NoteSpan { start, end, style });
-        self.spans = spans;
-        self.normalize();
-    }
-
-    pub fn clear_style(&mut self, start: usize, end: usize) {
-        if start >= end {
-            return;
-        }
-        self.apply_style(start, end, |s| *s = InlineStyle::default());
-    }
-
-    /// Convert a byte offset to a character offset.
-    /// Convert a character offset to a byte offset.
-    pub fn line_index(&self, byte: usize) -> usize {
-        self.text[..byte.min(self.text.len())].matches('\n').count()
-    }
-
-    pub fn line_start(&self, line: usize) -> usize {
-        if line == 0 {
-            return 0;
-        }
-        let mut n = 0;
-        for (i, c) in self.text.char_indices() {
-            if c == '\n' {
-                n += 1;
-                if n == line {
-                    return i + 1;
-                }
-            }
-        }
-        self.text.len()
-    }
-
-    pub fn line_end(&self, line: usize) -> usize {
-        self.text[self.line_start(line)..]
-            .find('\n')
-            .map(|i| self.line_start(line) + i)
-            .unwrap_or(self.text.len())
-    }
 }
 
 impl NoteDoc {
@@ -255,60 +171,6 @@ impl NoteDoc {
             self.font_size
         };
         (name, size)
-    }
-
-    /// Shift stored style spans through a single contiguous text replacement.
-    pub fn adjust_spans(&mut self, old: &str, new: &str) {
-        let mut prefix = 0;
-        for (a, b) in old.bytes().zip(new.bytes()) {
-            if a != b {
-                break;
-            }
-            prefix += 1;
-        }
-        while !old.is_char_boundary(prefix) || !new.is_char_boundary(prefix) {
-            prefix -= 1;
-        }
-        let mut suffix = 0;
-        while suffix + prefix < old.len() && suffix + prefix < new.len() {
-            let ai = old.len() - 1 - suffix;
-            let bi = new.len() - 1 - suffix;
-            if old.as_bytes()[ai] != new.as_bytes()[bi] {
-                break;
-            }
-            suffix += 1;
-        }
-        while !old.is_char_boundary(old.len().saturating_sub(suffix))
-            || !new.is_char_boundary(new.len().saturating_sub(suffix))
-        {
-            suffix -= 1;
-        }
-        let old_end = old.len().saturating_sub(suffix);
-        let new_end = new.len().saturating_sub(suffix);
-        let delta = new.len() as isize - old.len() as isize;
-        let map = |x: usize, is_end: bool| -> usize {
-            if x <= prefix {
-                x
-            } else if x >= old_end {
-                (x as isize + delta).max(0) as usize
-            } else if is_end {
-                new_end
-            } else {
-                prefix
-            }
-        };
-        for span in &mut self.spans {
-            span.start = map(span.start, false);
-            span.end = map(span.end, true);
-        }
-        self.spans.retain(|s| s.start < s.end);
-        self.text = new.to_string();
-        self.normalize();
-    }
-
-    pub fn line_range(&self, index: usize) -> (usize, usize) {
-        let line = self.line_index(index);
-        (self.line_start(line), self.line_end(line))
     }
 }
 
@@ -502,7 +364,6 @@ pub struct Settings {
     pub check_updates: bool,
     pub live_preview: bool,
     pub always_show_title: bool,
-    pub note_color_pal: String,
     pub default_note: DefaultNote,
     pub hotkeys: HotKeys,
     pub db_location: String,
@@ -526,7 +387,6 @@ impl Default for Settings {
             check_updates: true,
             live_preview: true,
             always_show_title: false,
-            note_color_pal: "Standard".into(),
             default_note: DefaultNote::default(),
             hotkeys: HotKeys::default(),
             db_location: String::new(),

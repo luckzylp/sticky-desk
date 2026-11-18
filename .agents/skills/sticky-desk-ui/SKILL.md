@@ -75,23 +75,38 @@ dialogs.
   `theme::hsla(color, opacity/100)`.
 - Text/font color is derived from the note background luminance
   (`theme::auto_font_color`) and the note dark-mode setting.
-- Note title bar: 31px; hide/menu/collapse/window controls; title centered,
-  drag on the title area only; title double-click edits.
-- The note toolbar has exactly two rows:
-  - **Centred row** (`w_full().justify_center()`): font colour, find, `MD/RTF`
-    toggle, preview. These four controls must stay centred at every width; do
-    not move them into a left-aligned group.
-  - **Formatting row** (`px_1()`): bold, italic, underline, strike, highlight,
-    bullet, checkbox; numbered list, the three alignments and clear appear only
-    when the window is wider than 340px. Font size stays pinned right.
-- Do not rebuild a single-row left/centre/right layout: the left group
-  under-renders in this GPUI version. Keep the two-row structure.
-- The note body is editable in Markdown by default. Markdown formatting is
-  applied through the toolbar; `MD/RTF` toggles the storage mode; the eye
+- Note title bar: 31px; title centred, drag on the title area only, title
+  double-click edits. Window controls are rendered on the left when the
+  desktop puts them there and on the right otherwise; `note_controls` must be
+  added on both sides.
+- The window controls keep the system side and order (`control_order`): Minus
+  minimizes with `window.minimize_window()`, Maximize zooms, and the close
+  button hides the note. Do not give the minimize button a custom behaviour.
+- Collapsing to a 32px title bar is a menu action (`Collapse note`), not the
+  window minimize button. A collapsed note shows an explicit maximize button
+  in its title bar (`Expand note`); the note minimum size is 200×32 so the
+  collapse can apply.
+- The note toolbar is a single formatting row (`px_1()`): bold, italic,
+  underline, strike, highlight, bullet, checkbox; numbered list, the three
+  alignments and clear appear only when the window is wider than 340px. Font
+  size stays pinned right. There is no centred toolbar row.
+- The note title bar only carries Preview (eye) and the ellipsis menu after
+  the title area; Preview stays visible in preview mode and is the way back.
+  Star and Find live in the note menu (`Add/Remove star`, `Find…`), not in the
+  title bar.
+- Font colour is not in the toolbar: the note menu's `Font color…` item opens
+  the Markdown colour dialog for the selection or current line.
+- Markdown is the only note format (GitHub-compatible). There is no RTF mode
+  and no MD/RTF toggle: the toolbar inserts Markdown syntax, and the eye
   button switches to the rendered `TextView::markdown` preview.
+- The shortcut toolbar is shown in edit mode only. Hide it while previewing
+  and while a note is locked; never show it above the preview.
+- Because the toolbar disappears in preview, the `Preview` toggle in the
+  note menu is the way back. Keep it checkable in the dropdown menu.
 - Locked notes are read-only and show the Markdown preview.
-- Use `TextDecoration`/`HighlightStyle` for rich-mode inline styling only;
-  Markdown mode relies on syntax, not decorations.
+- Text edits update the model in memory only (`AppModel::update_doc_text`).
+  The background loop flushes dirty notes to SQLite about every 400ms; never
+  call `mutate_note`/`save_note` or notify the model on every keystroke.
 
 ## Settings
 
@@ -100,7 +115,11 @@ dialogs.
   semibold title.
 - Rows are 40–44px high with the label on the left and the control on the
   right (`justify_between`); controls do not drift to the center.
-- Default note color is a 16×16, 256-color grid.
+- Color choice uses the circular HSV wheel in `src/app/color_wheel.rs`
+  (`ColorWheelView`): a hue/saturation disc, brightness slider and editable
+  `#RRGGBB` field. Settings opens it as a dialog; the note menu embeds the
+  same view inline. Do not reintroduce a 256-swatch grid, palettes or the
+  GPUI Kit `ColorSelect` popover.
 - Database, sounds, hotkeys and language are data-driven; do not hardcode
   platform paths in the view.
 - Links must contain only the app's supported destinations; no legacy
@@ -119,6 +138,12 @@ dialogs.
 
 ## Dialogs and menus
 
+- The note "..." menu is a `DropdownMenu` on the ellipsis button, built from
+  `PopupMenu` items: grouped sections with separators, icons, checkable
+  toggles and submenus (Notebook, Opacity, Size). Do not replace it with a
+  flat dialog again.
+- A menu item that needs a dialog (Color…) must open it through
+  `window.defer(cx, ...)` so the dialog survives the menu dismissing.
 - Use `window.open_dialog` and `DialogClose` from GPUI Kit.
 - Titles are short nouns or commands; buttons name the action (`Save`,
   `Delete`, `Restore`) rather than `OK`.

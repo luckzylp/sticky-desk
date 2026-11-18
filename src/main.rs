@@ -40,6 +40,9 @@ fn main() {
             // LastWindowClosed behaviour.
             let close_model = model.clone();
             let close_sub = cx.on_window_closed(move |cx, _| {
+                close_model.update(cx, |m, _| {
+                    m.flush_dirty_docs();
+                });
                 if cx.windows().is_empty() && !close_model.read(cx).settings.close_to_tray {
                     cx.quit();
                 }
@@ -101,6 +104,11 @@ fn main() {
                         for id in due {
                             app::windows::open_alarm_window(cx, loop_model.clone(), id);
                         }
+                        loop_model.update(cx, |m, cx| {
+                            if m.flush_dirty_docs() {
+                                cx.notify();
+                            }
+                        });
                     });
                 }
             });
@@ -140,7 +148,12 @@ fn handle_tray_cmd(cx: &mut App, model: gpui_kit::Entity<AppModel>, cmd: app::tr
         TrayCommand::Explorer => app::windows::open_explorer_window(cx, model),
         TrayCommand::Settings => app::windows::open_settings_window(cx, model),
         TrayCommand::About => app::windows::open_about_window(cx, model),
-        TrayCommand::Exit => cx.quit(),
+        TrayCommand::Exit => {
+            model.update(cx, |m, _| {
+                m.flush_dirty_docs();
+            });
+            cx.quit();
+        }
     }
 }
 

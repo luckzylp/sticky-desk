@@ -40,42 +40,6 @@ impl SettingsView {
         }
     }
 
-    fn choose_color(&mut self, window: &mut Window, cx: &mut Context<Self>) {
-        let model = self.model.clone();
-        let colors = crate::theme::palette_256();
-        window.open_dialog(cx, move |dialog, _window, _cx| {
-            let mut grid = v_flex().gap_1().w(px(360.));
-            let mut row = h_flex().gap_1();
-            for (i, c) in colors.iter().copied().enumerate() {
-                if i > 0 && i % 16 == 0 {
-                    grid = grid.child(row);
-                    row = h_flex().gap_1();
-                }
-                let model = model.clone();
-                row = row.child(
-                    Button::new(("default-color", i))
-                        .w(px(18.))
-                        .h(px(18.))
-                        .p_0()
-                        .rounded(px(2.))
-                        .bg(theme::rgba(c))
-                        .on_click(move |_, window: &mut Window, cx: &mut App| {
-                            model.update(cx, |m, cx| {
-                                m.settings.default_note.color = c;
-                                m.save_settings();
-                                cx.notify();
-                            });
-                            window.close_dialog(cx);
-                        }),
-                );
-            }
-            dialog
-                .title("Note Color (256)")
-                .w(px(400.))
-                .child(grid.child(row))
-        });
-    }
-
     fn location_dialog(&mut self, window: &mut Window, cx: &mut Context<Self>) {
         let model = self.model.clone();
         let input = self.path_input.clone();
@@ -412,29 +376,25 @@ impl Render for SettingsView {
             .child(section(cx, "Personalization",
                 v_flex()
                     .gap_1()
-                    .child(h_flex().h(px(44.)).items_center().justify_between().child(div().text_sm().child("Note color palette")).child(
-                        Button::new("palette-cycle")
-                            .outline()
-                            .small()
-                            .label(s.note_color_pal.clone())
-                            .on_click({
-                                let model = model.clone();
-                                move |_, _, cx: &mut App| {
-                                    model.update(cx, |m, cx| {
-                                        m.settings.note_color_pal = match m.settings.note_color_pal.as_str() {
-                                            "Standard" => "Classic".into(),
-                                            "Classic" => "Pastel".into(),
-                                            _ => "Standard".into(),
-                                        };
+                    .child(h_flex().h(px(44.)).items_center().justify_between().child(div().text_sm().child("Default note color")).child({
+                        let model = model.clone();
+                        let view = cx.entity().downgrade();
+                        let initial = s.default_note.color;
+                        h_flex().gap_2().items_center()
+                            .child(div().w(px(18.)).h(px(18.)).rounded(px(4.)).bg(theme::rgba(initial)))
+                            .child(Button::new("default-color").small().outline().label(super::color_wheel::hex_string(initial)).on_click(move |_, window, cx| {
+                                let m = model.clone();
+                                let v = view.clone();
+                                super::color_wheel::open_color_wheel(window, cx, initial, move |value, cx| {
+                                    m.update(cx, |m, cx| {
+                                        m.settings.default_note.color = value;
                                         m.save_settings();
                                         cx.notify();
                                     });
-                                }
-                            }),
-                    ))
-                    .child(h_flex().h(px(44.)).items_center().justify_between().child(div().text_sm().child("Default note color")).child(
-                        Button::new("default-color").small().outline().label("Choose...").on_click(cx.listener(|this, _, window, cx| this.choose_color(window, cx))),
-                    ))
+                                    let _ = v.update(cx, |_, cx| cx.notify());
+                                });
+                            }))
+                    }))
                     .child(h_flex().h(px(44.)).items_center().justify_between().child(div().text_sm().child("Default note opacity")).child(
                         Button::new("opacity-cycle").small().outline().label(format!("{}%", s.default_note.opacity)).on_click({
                             let model = model.clone();
