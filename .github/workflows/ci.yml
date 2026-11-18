@@ -212,7 +212,19 @@ jobs:
           key: windows-${{ matrix.arch }}-msvc
 
       - name: Build
-        run: cargo build --release --target ${{ matrix.target }}
+        shell: bash
+        run: |
+          set -o pipefail
+          cargo build --release --target ${{ matrix.target }} 2>&1 | tee build.log
+
+      - name: Publish build log on failure
+        if: failure()
+        shell: pwsh
+        run: |
+          Add-Content -Path $env:GITHUB_STEP_SUMMARY -Value "### Build output"
+          Add-Content -Path $env:GITHUB_STEP_SUMMARY -Value '```'
+          Get-Content -Path build.log -Tail 80 | Add-Content -Path $env:GITHUB_STEP_SUMMARY
+          Add-Content -Path $env:GITHUB_STEP_SUMMARY -Value '```'
 
       - name: Package
         shell: bash
@@ -239,7 +251,19 @@ jobs:
           key: macos-arm64
 
       - name: Build
-        run: cargo build --release
+        run: |
+          set -o pipefail
+          cargo build --release 2>&1 | tee build.log
+
+      - name: Publish build log on failure
+        if: failure()
+        run: |
+          {
+            echo '### Build output'
+            echo '```'
+            tail -n 80 build.log
+            echo '```'
+          } >> "$GITHUB_STEP_SUMMARY"
 
       - name: Package
         run: |
