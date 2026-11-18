@@ -3,13 +3,12 @@ use super::windows;
 use crate::model::*;
 use crate::theme;
 use gpui_kit::assets::IconName;
-use gpui_kit::base::input::TextDecorationCollection;
 use gpui_kit::component::{
     ActiveTheme as _, Sizable as _, WindowExt as _,
     button::{Button, ButtonVariants},
     dialog::{DialogClose, DialogFooter},
     h_flex,
-    input::{Editor, EditorState, Input, InputEvent, InputState},
+    input::{Input, InputEvent, InputState, Textarea, TextareaState},
     menu::{DropdownMenu as _, PopupMenu, PopupMenuItem},
     text::TextView,
     v_flex,
@@ -24,8 +23,7 @@ use gpui_kit::{
 pub struct NoteView {
     model: Entity<AppModel>,
     note_id: i64,
-    editor: Entity<EditorState>,
-    decorations: TextDecorationCollection,
+    editor: Entity<TextareaState>,
     focus_handle: FocusHandle,
     title_input: Entity<InputState>,
     find_input: Entity<InputState>,
@@ -52,16 +50,12 @@ impl NoteView {
             .unwrap_or_default();
         let text = doc.text.clone();
         let editor = cx.new(|cx| {
-            EditorState::new(window, cx)
+            TextareaState::new(window, cx)
                 .soft_wrap(true)
-                .line_number(false)
                 .placeholder("Write in Markdown… **bold**, *italic*, # heading, - list, - [ ] task")
         });
         editor.update(cx, |state, cx| {
             state.set_value(text.clone(), window, cx);
-        });
-        let decorations = editor.update(cx, |state, cx| {
-            state.create_decorations_collection(Vec::new(), cx)
         });
         let focus_handle = editor.read(cx).presentation().focus_handle().clone();
         let title_input = cx.new(|cx| InputState::new(window, cx).placeholder("Title"));
@@ -82,11 +76,10 @@ impl NoteView {
                 }
             },
         );
-        let mut this = Self {
+        let this = Self {
             model,
             note_id,
             editor,
-            decorations,
             focus_handle,
             title_input,
             find_input,
@@ -98,7 +91,6 @@ impl NoteView {
             last_text: text,
             _subscriptions: vec![sub],
         };
-        this.apply_decorations(&doc, cx);
         this
     }
 
@@ -147,10 +139,6 @@ impl NoteView {
         });
     }
 
-    fn apply_decorations(&mut self, _doc: &NoteDoc, cx: &mut Context<Self>) {
-        self.decorations.set(Vec::new(), cx);
-    }
-
     fn format_bool(&mut self, which: u8, window: &mut Window, cx: &mut Context<Self>) {
         let (p, s) = match which {
             0 => ("**", "**"),
@@ -185,7 +173,6 @@ impl NoteView {
 
     fn persist_doc(&mut self, doc: NoteDoc, cx: &mut Context<Self>) {
         let id = self.note_id;
-        self.apply_decorations(&doc, cx);
         self.model.update(cx, |m, cx| {
             m.mutate_note(id, |note| {
                 note.doc = doc;
@@ -443,7 +430,6 @@ impl NoteView {
         let focus = self.focus_handle.clone();
         let find_input = self.find_input.clone();
         let replace_input = self.replace_input.clone();
-        let decorations = self.decorations.clone();
         let id = self.note_id;
         let match_case = self.match_case;
         window.open_dialog(cx, move |dialog, _window, _cx| {
@@ -484,8 +470,6 @@ impl NoteView {
                     }
                 });
             let m_replace_state = m_find.clone();
-            let dec_replace = decorations.clone();
-            let dec_all = decorations.clone();
             let e_replace = editor.clone();
             let f_replace = focus.clone();
             let fi2 = find_input.clone();
@@ -507,11 +491,9 @@ impl NoteView {
                     if ok == Some(true) {
                         e_replace.update(cx, |state, cx| state.replace(repl, window, cx));
                         let new_text = e_replace.read(cx).value().to_string();
-                        let decorations = dec_replace.clone();
                         m_replace_state.update(cx, |m, cx| {
                             let mut doc = m.note(id).map(|n| n.doc.clone()).unwrap_or_default();
                             doc.text = new_text.clone();
-                            decorations.set(Vec::new(), cx);
                             m.set_doc(id, doc, None);
                             cx.notify();
                         });
@@ -550,11 +532,9 @@ impl NoteView {
                     };
                     e_all.update(cx, |state, cx| state.replace_all(result, window, cx));
                     let new_text = e_all.read(cx).value().to_string();
-                    let decorations = dec_all.clone();
                     m_all_state.update(cx, |m, cx| {
                         let mut doc = m.note(id).map(|n| n.doc.clone()).unwrap_or_default();
                         doc.text = new_text.clone();
-                        decorations.set(Vec::new(), cx);
                         m.set_doc(id, doc, None);
                         cx.notify();
                     });
@@ -832,46 +812,50 @@ impl Render for NoteView {
             .border_color(border)
             .child(format_row);
 
-        let editor = div()
-            .flex()
-            .flex_1()
-            .min_h(px(0.))
-            .p_3()
-            .child(if self.preview || locked {
-                div()
-                    .id("md-preview-scroll")
-                    .size_full()
-                    .overflow_y_scroll()
-                    .p_3()
-                    .child(
-                        TextView::markdown(
-                            ("md-preview", id as u64),
-                            self.model
-                                .read(cx)
-                                .note(id)
-                                .map(|n| n.doc.text.clone())
-                                .unwrap_or_default(),
+        let editor =
+            div()
+                .flex()
+                .flex_1()
+                .min_h(px(0.))
+                .px_2()
+                .py_1()
+                .child(if self.preview || locked {
+                    div()
+                        .id("md-preview-scroll")
+                        .size_full()
+                        .overflow_y_scroll()
+                        .px_2()
+                        .py_1()
+                        .child(
+                            TextView::markdown(
+                                ("md-preview", id as u64),
+                                self.model
+                                    .read(cx)
+                                    .note(id)
+                                    .map(|n| n.doc.text.clone())
+                                    .unwrap_or_default(),
+                            )
+                            .text_color(fg)
+                            .text_size(px(font_size as f32)),
                         )
+                        .into_any_element()
+                } else {
+                    Textarea::new(&self.editor)
+                        .appearance(false)
+                        .bordered(false)
+                        .with_size(gpui_kit::component::Size::XSmall)
+                        .readonly(locked)
+                        .text_size(px(font_size as f32))
                         .text_color(fg)
-                        .text_size(px(font_size as f32)),
-                    )
-                    .into_any_element()
-            } else {
-                Editor::new(&self.editor)
-                    .appearance(false)
-                    .bordered(false)
-                    .readonly(locked)
-                    .text_size(px(font_size as f32))
-                    .text_color(fg)
-                    .font_family(SharedString::from(font_name))
-                    .text_align(match doc_align {
-                        Align::Left => gpui_kit::TextAlign::Left,
-                        Align::Center => gpui_kit::TextAlign::Center,
-                        Align::Right => gpui_kit::TextAlign::Right,
-                    })
-                    .size_full()
-                    .into_any_element()
-            });
+                        .font_family(SharedString::from(font_name))
+                        .text_align(match doc_align {
+                            Align::Left => gpui_kit::TextAlign::Left,
+                            Align::Center => gpui_kit::TextAlign::Center,
+                            Align::Right => gpui_kit::TextAlign::Right,
+                        })
+                        .size_full()
+                        .into_any_element()
+                });
 
         v_flex()
             .size_full()

@@ -104,9 +104,16 @@ dialogs.
 - Because the toolbar disappears in preview, the `Preview` toggle in the
   note menu is the way back. Keep it checkable in the dropdown menu.
 - Locked notes are read-only and show the Markdown preview.
+- The note body uses the GPUI Kit `Textarea` (not the code `Editor`): the
+  code editor reserves a fold/gutter strip that pushes text far from the
+  border. Wrap it in `px_1().py_1()` and use `Size::XSmall` so the text sits
+  close to the note edge.
 - Text edits update the model in memory only (`AppModel::update_doc_text`).
-  The background loop flushes dirty notes to SQLite about every 400ms; never
-  call `mutate_note`/`save_note` or notify the model on every keystroke.
+  The background loop flushes dirty notes every ~400ms, but the actual SQLite
+  writes happen on the dedicated `DbWriter` thread (`src/store.rs`): the UI
+  thread only clones the dirty document and sends it over a channel. Call
+  `flush_now()` (which waits for the writer) on quit paths. Never call
+  `save_note`/`save_doc` or notify the model from a keystroke handler.
 
 ## Settings
 

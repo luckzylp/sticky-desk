@@ -44,6 +44,9 @@ fn main() {
                     m.flush_dirty_docs();
                 });
                 if cx.windows().is_empty() && !close_model.read(cx).settings.close_to_tray {
+                    close_model.update(cx, |m, _| {
+                        m.flush_now();
+                    });
                     cx.quit();
                 }
             });
@@ -150,7 +153,7 @@ fn handle_tray_cmd(cx: &mut App, model: gpui_kit::Entity<AppModel>, cmd: app::tr
         TrayCommand::About => app::windows::open_about_window(cx, model),
         TrayCommand::Exit => {
             model.update(cx, |m, _| {
-                m.flush_dirty_docs();
+                m.flush_now();
             });
             cx.quit();
         }

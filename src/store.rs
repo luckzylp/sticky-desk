@@ -2,6 +2,9 @@ use crate::model::*;
 use rusqlite::{Connection, params};
 use std::fs;
 use std::path::{Path, PathBuf};
+use std::sync::mpsc::{self, Sender};
+use std::thread;
+use std::time::Duration;
 
 pub const DB_FILE: &str = "Notes.db";
 
@@ -16,9 +19,24 @@ impl Store {
         }
         let conn = Connection::open(path)?;
         conn.pragma_update(None, "journal_mode", "WAL").ok();
+        conn.busy_timeout(Duration::from_secs(5)).ok();
         let store = Self { conn };
         store.ensure_schema()?;
         Ok(store)
+    }
+
+    pub(crate) fn from_connection(conn: Connection) -> Self {
+        Self { conn }
+    }
+
+    /// Persist only the document payload, leaving colour/state columns alone.
+    pub fn save_doc(&self, id: i64, doc: &NoteDoc, updated: f64) -> anyhow::Result<()> {
+        let data = serde_json::to_vec(doc)?;
+        self.conn.execute(
+            "UPDATE NOTES SET UPDATED=?1, DATA=?2, TEXT=?3 WHERE ID=?4",
+            params![updated, data, doc.text, id],
+        )?;
+        Ok(())
     }
 
     fn ensure_schema(&self) -> anyhow::Result<()> {
@@ -414,4 +432,80 @@ pub fn import_into(conn: &Connection, path: &Path) -> anyhow::Result<()> {
     .ok();
     conn.execute("DETACH DATABASE src", [])?;
     Ok(())
+}
+
+enum DbWrite {
+    SaveDoc { id: i64, doc: NoteDoc, updated: f64 },
+    SaveNote(Box<Note>),
+    Flush(Sender<()>),
+    Shutdown,
+}
+
+/// Owns a dedicated SQLite connection on a background thread so typing never
+/// waits on the UI thread for a database write.
+pub struct DbWriter {
+    tx: Sender<DbWrite>,
+    handle: Option<thread::JoinHandle<()>>,
+}
+
+impl DbWriter {
+    pub fn open(path: &Path) -> Self {
+        let (tx, rx) = mpsc::channel::<DbWrite>();
+        let path = path.to_path_buf();
+        let handle = thread::spawn(move || {
+            let Ok(conn) = Connection::open(&path) else {
+                return;
+            };
+            let _ = conn.pragma_update(None, "journal_mode", "WAL");
+            let _ = conn.busy_timeout(Duration::from_secs(5));
+            let store = Store::from_connection(conn);
+            while let Ok(msg) = rx.recv() {
+                match msg {
+                    DbWrite::SaveDoc { id, doc, updated } => {
+                        let _ = store.save_doc(id, &doc, updated);
+                    }
+                    DbWrite::SaveNote(note) => {
+                        let _ = store.save_note(&note);
+                    }
+                    DbWrite::Flush(ack) => {
+                        let _ = ack.send(());
+                    }
+                    DbWrite::Shutdown => break,
+                }
+            }
+        });
+        Self {
+            tx,
+            handle: Some(handle),
+        }
+    }
+
+    pub fn save_doc(&self, id: i64, doc: NoteDoc, updated: f64) -> bool {
+        self.tx.send(DbWrite::SaveDoc { id, doc, updated }).is_ok()
+    }
+
+    pub fn save_note(&self, note: Note) -> bool {
+        self.tx.send(DbWrite::SaveNote(Box::new(note))).is_ok()
+    }
+
+    /// Block until every queued write has been applied.
+    pub fn flush(&self) {
+        let (tx, rx) = mpsc::channel();
+        if self.tx.send(DbWrite::Flush(tx)).is_ok() {
+            let _ = rx.recv_timeout(Duration::from_secs(3));
+        }
+    }
+
+    pub fn shutdown(&mut self) {
+        let _ = self.tx.send(DbWrite::Shutdown);
+        if let Some(handle) = self.handle.take() {
+            let _ = handle.join();
+        }
+    }
+}
+
+impl Drop for DbWriter {
+    fn drop(&mut self) {
+        self.shutdown();
+    }
 }

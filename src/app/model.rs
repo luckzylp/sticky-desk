@@ -1,6 +1,8 @@
 use crate::i18n::Translator;
 use crate::model::*;
-use crate::store::{DB_FILE, Store, default_db_path, load_settings, save_settings, settings_file};
+use crate::store::{
+    DB_FILE, DbWriter, Store, default_db_path, load_settings, save_settings, settings_file,
+};
 use gpui_kit::AnyWindowHandle;
 use std::collections::{HashMap, HashSet};
 use std::path::PathBuf;
@@ -24,6 +26,9 @@ pub struct AppModel {
     pub explorer_page: ExplorerPage,
     /// Notes whose text changed since the last database flush.
     pub dirty_docs: HashSet<i64>,
+    /// Notes whose non-document fields (colour, …) changed since the flush.
+    pub dirty_notes: HashSet<i64>,
+    pub writer: Option<DbWriter>,
 }
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -61,6 +66,8 @@ impl AppModel {
             selection: Vec::new(),
             explorer_page: ExplorerPage::AllNotes,
             dirty_docs: HashSet::new(),
+            dirty_notes: HashSet::new(),
+            writer: None,
         };
         model.open_store();
         model
@@ -72,6 +79,7 @@ impl AppModel {
                 self.notes = store.load_notes().unwrap_or_default();
                 self.notebooks = store.load_notebooks().unwrap_or_default();
                 self.store = Some(store);
+                self.writer = Some(DbWriter::open(&self.db_path));
                 if self.notebooks.is_empty() {
                     if let Some(store) = &self.store {
                         let _ = store.insert_notebook("Default");
@@ -104,6 +112,8 @@ impl AppModel {
     }
 
     pub fn restore_from(&mut self, source: &std::path::Path) -> anyhow::Result<()> {
+        self.flush_now();
+        self.writer = None;
         if let Some(store) = self.store.take() {
             drop(store);
         }
@@ -118,6 +128,8 @@ impl AppModel {
     }
 
     pub fn reload_db(&mut self, path: PathBuf) {
+        self.flush_now();
+        self.writer = None;
         self.db_path = path;
         self.notes.clear();
         self.open_store();
@@ -227,24 +239,59 @@ impl AppModel {
     pub fn update_note_color(&mut self, id: i64, color: u32) {
         if let Some(note) = self.notes.iter_mut().find(|n| n.id == id) {
             note.color = color;
-            self.dirty_docs.insert(id);
+            self.dirty_notes.insert(id);
         }
     }
 
-    /// Write pending note texts and return true when anything was flushed.
+    /// Hand pending writes to the database thread. The UI thread never touches
+    /// SQLite here; if the writer is unavailable the write falls back to the
+    /// direct connection.
     pub fn flush_dirty_docs(&mut self) -> bool {
-        if self.dirty_docs.is_empty() {
+        if self.dirty_docs.is_empty() && self.dirty_notes.is_empty() {
             return false;
         }
-        let ids: Vec<i64> = self.dirty_docs.drain().collect();
-        if let Some(store) = self.store.as_ref() {
-            for id in ids {
-                if let Some(note) = self.notes.iter().find(|n| n.id == id) {
-                    let _ = store.save_note(note);
+        let doc_ids: Vec<i64> = self.dirty_docs.drain().collect();
+        let note_ids: Vec<i64> = self.dirty_notes.drain().collect();
+        let docs: Vec<(i64, NoteDoc, f64)> = doc_ids
+            .iter()
+            .filter_map(|id| {
+                self.notes
+                    .iter()
+                    .find(|n| n.id == *id)
+                    .map(|n| (*id, n.doc.clone(), n.updated))
+            })
+            .collect();
+        let notes: Vec<Note> = note_ids
+            .iter()
+            .filter_map(|id| self.notes.iter().find(|n| n.id == *id).cloned())
+            .collect();
+        let writer = self.writer.as_ref();
+        let store = self.store.as_ref();
+        for (id, doc, updated) in docs {
+            let sent = writer.is_some_and(|writer| writer.save_doc(id, doc.clone(), updated));
+            if !sent {
+                if let Some(store) = store {
+                    let _ = store.save_doc(id, &doc, updated);
+                }
+            }
+        }
+        for note in notes {
+            let sent = writer.is_some_and(|writer| writer.save_note(note.clone()));
+            if !sent {
+                if let Some(store) = store {
+                    let _ = store.save_note(&note);
                 }
             }
         }
         true
+    }
+
+    /// Flush and wait until the database thread has applied everything.
+    pub fn flush_now(&mut self) {
+        self.flush_dirty_docs();
+        if let Some(writer) = &self.writer {
+            writer.flush();
+        }
     }
 
     pub fn save_settings(&self) {
