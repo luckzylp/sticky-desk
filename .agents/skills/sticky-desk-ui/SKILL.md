@@ -145,6 +145,11 @@ dialogs.
 
 ## Dialogs and menus
 
+- Note rows in Explorer open a right-click `ContextMenu` anchored at the
+  pointer (menu top at the row, not a centred dialog): Open note, Edit title,
+  Star, Note info, Move to trash (or Restore / Delete forever in Trash). It
+  has no dialog title or close button. Dialogs opened from its items use
+  `window.defer` so the menu dismissal cannot swallow them.
 - The note "..." menu is a `DropdownMenu` on the ellipsis button, built from
   `PopupMenu` items: grouped sections with separators, icons, checkable
   toggles and submenus (Notebook, Opacity, Size). Do not replace it with a

@@ -8,12 +8,13 @@ use gpui_kit::component::{
     dialog::{DialogClose, DialogFooter},
     h_flex,
     input::{Input, InputEvent, InputState},
+    menu::{ContextMenuExt as _, PopupMenu, PopupMenuItem},
     v_flex,
 };
 use gpui_kit::{
     App, AppContext as _, ClickEvent, Context, Entity, InteractiveElement as _, IntoElement,
-    MouseButton, ParentElement as _, Render, SharedString, StatefulInteractiveElement as _,
-    Styled as _, Subscription, Window, div, prelude::FluentBuilder as _, px,
+    ParentElement as _, Render, SharedString, StatefulInteractiveElement as _, Styled as _,
+    Subscription, Window, div, prelude::FluentBuilder as _, px,
 };
 
 pub struct ExplorerView {
@@ -56,154 +57,73 @@ impl ExplorerView {
         }
     }
 
-    fn open_note_menu(&mut self, id: i64, window: &mut Window, cx: &mut Context<Self>) {
+    fn edit_note_title(&mut self, id: i64, window: &mut Window, cx: &mut Context<Self>) {
         let model = self.model.clone();
-        let note = self.model.read(cx).note(id).cloned();
-        let Some(note) = note else { return };
-        let trashed = note.is_trashed();
-        let title = note.title.clone();
+        let title = model
+            .read(cx)
+            .note(id)
+            .map(|n| n.title.clone())
+            .unwrap_or_default();
+        let input = cx.new(|cx| InputState::new(window, cx).placeholder("Title"));
+        input.update(cx, |state, cx| state.set_value(title, window, cx));
         window.open_dialog(cx, move |dialog, _window, _cx| {
-            let m_open = model.clone();
-            let open =
-                Button::new("row-open")
-                    .label("Open Note")
-                    .on_click(move |_, _, cx: &mut App| {
-                        windows::open_note_window(cx, m_open.clone(), id);
-                    });
-            let m_info = model.clone();
-            let info =
-                Button::new("row-info").label("Note Info").on_click(
-                    move |_, window: &mut Window, cx: &mut App| {
-                        let note = m_info.read(cx).note(id).cloned();
-                        if let Some(note) = note {
-                            window.open_dialog(cx, move |dialog, _window, _cx| {
-                                dialog
-                                    .title(note.title.clone())
-                                    .w(px(460.))
-                                    .child(
-                                        v_flex()
-                                            .gap_2()
-                                            .child(info_row("Notebook", &note.notebook))
-                                            .child(info_row("Created", &fmt_dt(note.created_dt())))
-                                            .child(info_row("Updated", &fmt_dt(note.updated_dt())))
-                                            .child(info_row("Deleted", &fmt_dt(note.deleted_dt())))
-                                            .child(
-                                                div()
-                                                    .text_sm()
-                                                    .text_color(gpui_kit::rgb(0x808080))
-                                                    .child(truncate(&note.doc.text, 220)),
-                                            ),
-                                    )
-                                    .footer(DialogFooter::new().child(
-                                        DialogClose::new().child(
-                                            Button::new("info-close").label("Close").outline(),
-                                        ),
-                                    ))
-                            });
-                        }
-                    },
-                );
-            let m_rename = model.clone();
-            let rename = Button::new("row-edit-title").label("Edit Title").on_click(
-                move |_, window: &mut Window, cx: &mut App| {
-                    let m = m_rename.clone();
-                    let title = m
-                        .read(cx)
-                        .note(id)
-                        .map(|n| n.title.clone())
-                        .unwrap_or_default();
-                    let input = cx.new(|cx| InputState::new(window, cx).placeholder("Title"));
-                    input.update(cx, |state, cx| state.set_value(title, window, cx));
-                    window.open_dialog(cx, move |dialog, _window, _cx| {
-                        let m = m.clone();
-                        let input = input.clone();
-                        dialog
-                            .title("Edit title")
-                            .w(px(360.))
-                            .child(Input::new(&input))
-                            .footer(
-                                DialogFooter::new()
-                                    .gap_2()
-                                    .child(
-                                        DialogClose::new()
-                                            .child(Button::new("title-cancel").label("Cancel")),
-                                    )
-                                    .child(DialogClose::new().child(
-                                        Button::new("title-save").primary().label("Save").on_click(
-                                            move |_, window: &mut Window, cx: &mut App| {
-                                                let value =
-                                                    input.read(cx).value().trim().to_string();
-                                                if !value.is_empty() {
-                                                    m.update(cx, |m, cx| {
-                                                        m.mutate_note(id, |n| {
-                                                            n.title = value.clone()
-                                                        });
-                                                        cx.notify();
-                                                    });
-                                                }
-                                                window.close_dialog(cx);
-                                            },
-                                        ),
-                                    )),
-                            )
-                    });
-                },
-            );
-            let m_star = model.clone();
-            let star = Button::new("row-star").label("Toggle Star").on_click(
-                move |_, window: &mut Window, cx: &mut App| {
-                    m_star.update(cx, |m, cx| {
-                        m.mutate_note(id, |n| n.starred = !n.starred);
-                        cx.notify();
-                    });
-                    window.close_dialog(cx);
-                },
-            );
-            let m_trash = model.clone();
-            let trash = Button::new("row-trash").label("Move to Trash").on_click(
-                move |_, window: &mut Window, cx: &mut App| {
-                    m_trash.update(cx, |m, cx| {
-                        m.trash_note(id);
-                        cx.notify();
-                    });
-                    window.close_dialog(cx);
-                },
-            );
-            let m_restore = model.clone();
-            let restore = Button::new("row-restore").label("Restore").on_click(
-                move |_, window: &mut Window, cx: &mut App| {
-                    m_restore.update(cx, |m, cx| {
-                        m.restore_note(id);
-                        cx.notify();
-                    });
-                    window.close_dialog(cx);
-                },
-            );
-            let m_delete = model.clone();
-            let delete = Button::new("row-delete").label("Delete forever").on_click(
-                move |_, window: &mut Window, cx: &mut App| {
-                    m_delete.update(cx, |m, cx| {
-                        m.delete_forever(id);
-                        cx.notify();
-                    });
-                    window.close_dialog(cx);
-                },
-            );
-            dialog.title(title.clone()).w(px(320.)).child(
-                v_flex()
-                    .gap_1()
-                    .when(!trashed, |d| {
-                        d.child(open)
-                            .child(rename)
-                            .child(star)
-                            .child(info)
-                            .child(trash)
-                    })
-                    .when(trashed, |d| d.child(restore).child(delete))
-                    .child(DialogFooter::new().mt_2().child(
-                        DialogClose::new().child(Button::new("row-close").label("Close").outline()),
-                    )),
-            )
+            let m = model.clone();
+            let input = input.clone();
+            dialog
+                .title("Edit title")
+                .w(px(360.))
+                .close_button(false)
+                .child(Input::new(&input))
+                .footer(
+                    DialogFooter::new()
+                        .gap_2()
+                        .child(
+                            DialogClose::new().child(Button::new("title-cancel").label("Cancel")),
+                        )
+                        .child(DialogClose::new().child(
+                            Button::new("title-save").primary().label("Save").on_click(
+                                move |_, window: &mut Window, cx: &mut App| {
+                                    let value = input.read(cx).value().trim().to_string();
+                                    if !value.is_empty() {
+                                        m.update(cx, |m, cx| {
+                                            m.mutate_note(id, |n| n.title = value.clone());
+                                            cx.notify();
+                                        });
+                                    }
+                                    window.close_dialog(cx);
+                                },
+                            ),
+                        )),
+                )
+        });
+    }
+
+    fn note_info_dialog(&mut self, id: i64, window: &mut Window, cx: &mut Context<Self>) {
+        let Some(note) = self.model.read(cx).note(id).cloned() else {
+            return;
+        };
+        window.open_dialog(cx, move |dialog, _window, _cx| {
+            dialog
+                .title(note.title.clone())
+                .w(px(460.))
+                .close_button(false)
+                .child(
+                    v_flex()
+                        .gap_2()
+                        .child(info_row("Notebook", &note.notebook))
+                        .child(info_row("Created", &fmt_dt(note.created_dt())))
+                        .child(info_row("Updated", &fmt_dt(note.updated_dt())))
+                        .child(info_row("Deleted", &fmt_dt(note.deleted_dt())))
+                        .child(
+                            div()
+                                .text_sm()
+                                .text_color(gpui_kit::rgb(0x808080))
+                                .child(truncate(&note.doc.text, 220)),
+                        ),
+                )
+                .footer(DialogFooter::new().child(
+                    DialogClose::new().child(Button::new("info-close").label("Close").outline()),
+                ))
         });
     }
 
@@ -677,6 +597,8 @@ impl Render for ExplorerView {
                 let locked = note.locked;
                 let notebook = note.notebook.clone();
                 let model = model.clone();
+                let menu_model = model.clone();
+                let weak_view = cx.entity().downgrade();
                 div()
                     .id(("note-row", id as u64))
                     .flex()
@@ -706,12 +628,6 @@ impl Render for ExplorerView {
                             windows::open_note_window(cx, model.clone(), id);
                         }
                     })
-                    .on_mouse_down(
-                        MouseButton::Right,
-                        cx.listener(move |this, _, window, cx| {
-                            this.open_note_menu(id, window, cx);
-                        }),
-                    )
                     .child(
                         div()
                             .w(px(6.))
@@ -773,6 +689,16 @@ impl Render for ExplorerView {
                                     .child(notebook),
                             ),
                     )
+                    .context_menu(move |menu, window, cx| {
+                        build_note_row_menu(
+                            menu,
+                            id,
+                            menu_model.clone(),
+                            weak_view.clone(),
+                            window,
+                            cx,
+                        )
+                    })
             }));
 
         let empty = total == 0;
@@ -1011,6 +937,100 @@ fn section_label(text: &str) -> impl IntoElement {
 }
 
 const TRASH_SVG: &str = r#"<svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M3 6h18"/><path d="M8 6V4h8v2"/><path d="M6 6l1 15h10l1-15"/><path d="M10 11v6"/><path d="M14 11v6"/></svg>"#;
+
+fn build_note_row_menu(
+    menu: PopupMenu,
+    id: i64,
+    model: Entity<AppModel>,
+    view: gpui_kit::WeakEntity<ExplorerView>,
+    _window: &mut Window,
+    cx: &mut Context<PopupMenu>,
+) -> PopupMenu {
+    let Some(note) = model.read(cx).note(id).cloned() else {
+        return menu;
+    };
+    let trashed = note.is_trashed();
+    let starred = note.starred;
+
+    let m = model.clone();
+    let open = PopupMenuItem::new("Open note")
+        .icon(IconName::FileText)
+        .on_click(move |_, _, cx| windows::open_note_window(cx, m.clone(), id));
+
+    let v = view.clone();
+    let edit_title = PopupMenuItem::new("Edit title")
+        .icon(IconName::Pencil)
+        .on_click(move |_, window, cx| {
+            let v = v.clone();
+            window.defer(cx, move |window, cx| {
+                let _ = v.update(cx, |this, cx| this.edit_note_title(id, window, cx));
+            });
+        });
+
+    let m = model.clone();
+    let star = PopupMenuItem::new(if starred { "Remove star" } else { "Add star" })
+        .icon(IconName::Star)
+        .checked(starred)
+        .on_click(move |_, _, cx| {
+            m.update(cx, |m, cx| {
+                m.mutate_note(id, |n| n.starred = !n.starred);
+                cx.notify();
+            });
+        });
+
+    let v = view.clone();
+    let info = PopupMenuItem::new("Note info")
+        .icon(IconName::Info)
+        .on_click(move |_, window, cx| {
+            let v = v.clone();
+            window.defer(cx, move |window, cx| {
+                let _ = v.update(cx, |this, cx| this.note_info_dialog(id, window, cx));
+            });
+        });
+
+    let m = model.clone();
+    let trash = PopupMenuItem::new("Move to trash")
+        .icon(IconName::Trash)
+        .on_click(move |_, _, cx| {
+            m.update(cx, |m, cx| {
+                m.trash_note(id);
+                cx.notify();
+            });
+        });
+
+    let m = model.clone();
+    let restore = PopupMenuItem::new("Restore")
+        .icon(IconName::Undo)
+        .on_click(move |_, _, cx| {
+            m.update(cx, |m, cx| {
+                m.restore_note(id);
+                cx.notify();
+            });
+        });
+
+    let m = model.clone();
+    let delete = PopupMenuItem::new("Delete forever")
+        .icon(IconName::Trash)
+        .on_click(move |_, _, cx| {
+            m.update(cx, |m, cx| {
+                m.delete_forever(id);
+                cx.notify();
+            });
+        });
+
+    let menu = menu.min_w(px(210.));
+    if trashed {
+        menu.item(restore).item(delete)
+    } else {
+        menu.item(open)
+            .item(edit_title)
+            .separator()
+            .item(star)
+            .item(info)
+            .separator()
+            .item(trash)
+    }
+}
 
 fn notebook_item(
     cx: &gpui_kit::App,
