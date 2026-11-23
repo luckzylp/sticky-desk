@@ -376,7 +376,7 @@ pub struct Settings {
 impl Default for Settings {
     fn default() -> Self {
         Self {
-            version: "0.4.0".into(),
+            version: env!("CARGO_PKG_VERSION").into(),
             language: "en".into(),
             app_mode: AppMode::Light,
             note_mode: NoteMode::Light,
