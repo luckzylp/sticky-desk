@@ -38,12 +38,17 @@ desktop entry). CI also builds Windows and macOS binaries.
   title bar that appears on hover. Notes can be resized, collapsed, locked, duplicated, hidden, and
   arranged in notebooks.
 - **Markdown editor** — bold, italic, underline, strikethrough, highlight and font colors,
-  bullet/numbered/check lists, alignment, font size, live preview, and find & replace.
+  bullet/numbered/check lists, alignment, font size, and find & replace.
+- **GitHub-flavored preview** — headings, tables, task lists, code blocks, blockquotes, links,
+  images, and the rest of GFM render in the card preview.
+- **Images and drag-and-drop** — drop PNG, JPEG, GIF, WebP, BMP, or SVG files onto a note. They are
+  copied to an `attachments` folder next to the database and inserted as Markdown images.
+  `data:` image URLs are supported as well.
 - **Explorer** — All Notes, Starred, Trash, notebooks, search, sorting, multi-select bulk actions,
   restore, permanent delete, and move to notebook.
-- **Note menu** — color wheel, opacity, size presets, lock, export as Markdown, print, locate in
-  Explorer, and hide/delete. The menu is capped to the note window height and scrolls when the card
-  is short.
+- **Note menu** — preview toggle, color wheel, opacity, size presets, lock, export as Markdown,
+  print, locate in Explorer, and hide/delete. The menu is capped to the note window height and
+  scrolls when the card is short.
 - **Personalisation** — note colors, opacity, per-note font and font size, light/dark/system themes,
   note color mode, and accent color.
 - **Local-first storage** — SQLite with WAL and asynchronous writes. The database folder can be
@@ -143,6 +148,7 @@ Linux paths:
 | What | Where |
 | --- | --- |
 | Notes database | `~/Documents/StickyDesk/Notes.db` (falls back to `~/.local/share/StickyDesk/Notes.db`) |
+| Dropped images | `~/Documents/StickyDesk/attachments/` (or the attachments folder beside a custom `Notes.db`) |
 | Settings | `~/.config/sticky-desk/settings.json` |
 | Alarm sounds | `~/.config/sticky-desk/Sounds/` |
 
@@ -174,6 +180,13 @@ assets/
 vendor/gpui-component patched GPUI component library
 ```
 
+## What's new in 0.6.0
+
+- Removed the preview button from the note title bar; preview is still available from the note menu.
+- Added local image rendering to the GitHub-flavored Markdown preview.
+- Drag image files onto a note to copy them into the attachments folder and insert Markdown.
+- Added `data:` image URL support.
+
 ## What's new in 0.5.1
 
 - CI and release workflows now run on Ubuntu 24.04.
@@ -189,7 +202,7 @@ vendor/gpui-component patched GPUI component library
 
 ## Status
 
-The current release is **0.5.1**. StickyDesk is usable for daily notes; back up `Notes.db` before
+The current release is **0.6.0**. StickyDesk is usable for daily notes; back up `Notes.db` before
 large reorganisations or database-folder changes.
 
 ## License

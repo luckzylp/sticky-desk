@@ -4,7 +4,7 @@ use crate::model::*;
 use crate::theme;
 use gpui_kit::assets::IconName;
 use gpui_kit::component::{
-    ActiveTheme as _, Sizable as _, WindowExt as _,
+    Sizable as _, WindowExt as _,
     button::{Button, ButtonVariants},
     dialog::{DialogClose, DialogFooter},
     h_flex,
@@ -19,6 +19,7 @@ use gpui_kit::{
     StatefulInteractiveElement as _, Styled as _, Subscription, Window, div,
     prelude::FluentBuilder as _, px,
 };
+use std::path::{Path, PathBuf};
 
 pub struct NoteView {
     model: Entity<AppModel>,
@@ -235,6 +236,88 @@ impl NoteView {
         doc.text = new_text;
         self.persist_doc(doc, cx);
         window.focus(&self.focus_handle, cx);
+    }
+
+    fn attachments_dir(&self, cx: &App) -> PathBuf {
+        let settings = &self.model.read(cx).settings;
+        let base = if settings.db_location.trim().is_empty() {
+            crate::store::default_db_path(&crate::store::settings_file())
+                .parent()
+                .map(Path::to_path_buf)
+                .unwrap_or_else(std::env::temp_dir)
+        } else {
+            PathBuf::from(settings.db_location.trim())
+        };
+        base.join("attachments")
+    }
+
+    fn insert_image_paths(
+        &mut self,
+        paths: &[PathBuf],
+        window: &mut Window,
+        cx: &mut Context<Self>,
+    ) {
+        if self.note(cx).map(|n| n.locked).unwrap_or(false) {
+            return;
+        }
+        let dir = self.attachments_dir(cx);
+        if std::fs::create_dir_all(&dir).is_err() {
+            self.model.update(cx, |m, _| {
+                m.toast_error("Could not create the attachments folder")
+            });
+            return;
+        }
+
+        let mut snippets = Vec::new();
+        for path in paths {
+            let Some(ext) = path.extension().and_then(|e| e.to_str()) else {
+                continue;
+            };
+            let ext = ext.to_ascii_lowercase();
+            if !matches!(
+                ext.as_str(),
+                "png" | "jpg" | "jpeg" | "gif" | "webp" | "bmp" | "svg"
+            ) {
+                continue;
+            }
+            let Some(stem) = path.file_stem().and_then(|s| s.to_str()) else {
+                continue;
+            };
+            let stem = crate::util::safe_filename(stem);
+            let mut dest = dir.join(format!("{stem}.{ext}"));
+            let mut n = 1;
+            while dest.exists() {
+                dest = dir.join(format!("{stem}-{n}.{ext}"));
+                n += 1;
+            }
+            if std::fs::copy(path, &dest).is_err() {
+                continue;
+            }
+            let alt = stem.replace('[', "").replace(']', "");
+            let dest = dest.to_string_lossy().replace('\\', "/");
+            snippets.push(format!("![{alt}](<{dest}>)"));
+        }
+
+        if snippets.is_empty() {
+            self.model.update(cx, |m, _| {
+                m.toast_error("No supported image files were dropped")
+            });
+            return;
+        }
+
+        let text = self.editor.read(cx).value().to_string();
+        let sel = self.editor.read(cx).selected_range();
+        let start = sel.start.min(text.len());
+        let end = sel.end.min(text.len());
+        let mut insert = String::new();
+        if start > 0 && !text[..start].ends_with('\n') {
+            insert.push('\n');
+        }
+        insert.push_str(&snippets.join("\n"));
+        insert.push('\n');
+        let caret = start + insert.len();
+        let new_text = format!("{}{}{}", &text[..start], insert, &text[end..]);
+        self.replace_source(new_text, (caret, caret), window, cx);
     }
 
     fn expand(&mut self, window: &mut Window) {
@@ -649,21 +732,6 @@ impl Render for NoteView {
                         })),
                 )
             })
-            .child(
-                Button::new(("note-preview", id as u64))
-                    .ghost()
-                    .small()
-                    .w(px(28.))
-                    .h(px(28.))
-                    .p_0()
-                    .text_color(fg)
-                    .icon(IconName::Eye)
-                    .when(self.preview, |b| b.text_color(cx.theme().primary))
-                    .on_click(cx.listener(|this, _, _, cx| {
-                        this.preview = !this.preview;
-                        cx.notify();
-                    })),
-            )
             .child({
                 let menu_model = self.model.clone();
                 let weak_view = cx.entity().downgrade();
@@ -831,6 +899,7 @@ impl Render for NoteView {
             .border_color(divider)
             .child(format_row);
 
+        let image_dir = self.attachments_dir(cx);
         let editor = div()
             .flex()
             .flex_1()
@@ -856,7 +925,8 @@ impl Render for NoteView {
                         )
                         .text_color(fg)
                         .text_size(px(font_size as f32))
-                        .selectable(false),
+                        .selectable(false)
+                        .image_source(move |uri| resolve_image_source(uri, &image_dir)),
                     )
                     .into_any_element()
             } else {
@@ -969,6 +1039,11 @@ impl Render for NoteView {
                             cx.notify();
                         }
                     }))
+                    .on_drop(
+                        cx.listener(|this, paths: &gpui_kit::ExternalPaths, window, cx| {
+                            this.insert_image_paths(paths.paths(), window, cx);
+                        }),
+                    )
                     .child(title_panel)
                     .when(!self.collapsed, |d| {
                         d.child(editor)
@@ -1408,4 +1483,103 @@ fn fmt_button(
         .text_color(fg)
         .icon(icon)
         .on_click(handler)
+}
+
+fn resolve_image_source(uri: &gpui_kit::SharedUri, attachments: &Path) -> gpui_kit::ImageSource {
+    let raw = uri.as_ref();
+    if raw.starts_with("http://") || raw.starts_with("https://") {
+        return gpui_kit::ImageSource::from(raw.to_string());
+    }
+    if raw.starts_with("data:") {
+        if let Some(image) = decode_data_url(raw) {
+            return gpui_kit::ImageSource::Image(image);
+        }
+        return gpui_kit::ImageSource::from(raw.to_string());
+    }
+
+    let raw = raw.strip_prefix("file://").unwrap_or(raw);
+    let raw = if cfg!(windows)
+        && raw.len() > 2
+        && raw.starts_with('/')
+        && raw.as_bytes().get(2) == Some(&b':')
+    {
+        &raw[1..]
+    } else {
+        raw
+    };
+    let path = PathBuf::from(percent_decode(raw));
+    let path = if path.is_absolute() {
+        path
+    } else {
+        attachments.join(path)
+    };
+    gpui_kit::ImageSource::from(path)
+}
+
+fn decode_data_url(value: &str) -> Option<std::sync::Arc<gpui_kit::Image>> {
+    type Cache =
+        std::sync::Mutex<std::collections::HashMap<String, std::sync::Arc<gpui_kit::Image>>>;
+    static CACHE: std::sync::OnceLock<Cache> = std::sync::OnceLock::new();
+    let cache = CACHE.get_or_init(|| std::sync::Mutex::new(std::collections::HashMap::new()));
+
+    if let Some(image) = cache.lock().ok().and_then(|c| c.get(value).cloned()) {
+        return Some(image);
+    }
+
+    let image = decode_data_url_uncached(value)?;
+    if let Ok(mut cache) = cache.lock() {
+        if cache.len() >= 32 {
+            cache.clear();
+        }
+        cache.insert(value.to_string(), image.clone());
+    }
+    Some(image)
+}
+
+fn decode_data_url_uncached(value: &str) -> Option<std::sync::Arc<gpui_kit::Image>> {
+    let url = data_url::DataUrl::process(value).ok()?;
+    let (bytes, _) = url.decode_to_vec().ok()?;
+    let mime = url.mime_type().to_string();
+    let mime = mime.split(';').next().unwrap_or("");
+    let format = match mime {
+        "image/png" => gpui_kit::ImageFormat::Png,
+        "image/jpeg" => gpui_kit::ImageFormat::Jpeg,
+        "image/gif" => gpui_kit::ImageFormat::Gif,
+        "image/webp" => gpui_kit::ImageFormat::Webp,
+        "image/bmp" => gpui_kit::ImageFormat::Bmp,
+        "image/svg+xml" => gpui_kit::ImageFormat::Svg,
+        "image/tiff" => gpui_kit::ImageFormat::Tiff,
+        "image/x-icon" | "image/vnd.microsoft.icon" => gpui_kit::ImageFormat::Ico,
+        _ => return None,
+    };
+    Some(std::sync::Arc::new(gpui_kit::Image::from_bytes(
+        format, bytes,
+    )))
+}
+
+fn percent_decode(value: &str) -> String {
+    let bytes = value.as_bytes();
+    let mut out = Vec::with_capacity(bytes.len());
+    let mut i = 0;
+    while i < bytes.len() {
+        if bytes[i] == b'%' && i + 2 < bytes.len() {
+            if let (Some(high), Some(low)) = (hex_value(bytes[i + 1]), hex_value(bytes[i + 2])) {
+                out.push(high * 16 + low);
+                i += 3;
+                continue;
+            }
+        }
+        out.push(bytes[i]);
+        i += 1;
+    }
+    String::from_utf8_lossy(&out).into_owned()
+}
+
+fn hex_value(byte: u8) -> Option<u8> {
+    match byte {
+        b'0'..=b'9' => Some(byte - b'0'),
+        b'a'..=b'f' => Some(byte - b'a' + 10),
+        b'A'..=b'F' => Some(byte - b'A' + 10),
+        _ => None,
+    }
 }
