@@ -31,6 +31,7 @@ pub struct NoteView {
     match_case: bool,
     collapsed: bool,
     preview: bool,
+    hovered: bool,
     expanded_height: i32,
     last_text: String,
     _subscriptions: Vec<Subscription>,
@@ -61,7 +62,7 @@ impl NoteView {
         let title_input = cx.new(|cx| InputState::new(window, cx).placeholder("Title"));
         let find_input = cx.new(|cx| InputState::new(window, cx).placeholder("Find what"));
         let replace_input = cx.new(|cx| InputState::new(window, cx).placeholder("Replace with"));
-        window.set_client_corner_radii(Corners::all(px(12.)));
+        window.set_client_corner_radii(Corners::all(px(8.)));
         let sub = cx.subscribe_in(
             &editor,
             window,
@@ -87,6 +88,7 @@ impl NoteView {
             match_case: false,
             collapsed: false,
             preview: std::env::var_os("SSN_PREVIEW").is_some(),
+            hovered: false,
             expanded_height: 0,
             last_text: text,
             _subscriptions: vec![sub],
@@ -578,7 +580,7 @@ impl Render for NoteView {
                     n.aot,
                 )
             })
-            .unwrap_or(("Note".into(), 0xFFFF99, 100, false, false, 0.0, false));
+            .unwrap_or(("Note".into(), 0xFFF3AB, 100, false, false, 0.0, false));
         let dark_notes = {
             let m = self.model.read(cx);
             matches!(m.settings.note_mode, NoteMode::Dark)
@@ -593,12 +595,8 @@ impl Render for NoteView {
             stored_color
         };
         let bg = theme::hsla(color, opacity as f32 / 100.0);
-        let title_bg = theme::hsla(
-            theme::brightness(color, -8),
-            (opacity as f32 / 100.0).min(0.98),
-        );
         let fg = theme::hsla(theme::auto_font_color(color), 0.92);
-        let border = theme::hsla(theme::brightness(color, -22), 0.5);
+        let divider = fg.opacity(0.08);
         let id = self.note_id;
 
         let title_area = div()
@@ -609,8 +607,8 @@ impl Render for NoteView {
             .h_full()
             .items_center()
             .justify_center()
-            .text_size(px(13.5))
-            .text_color(fg)
+            .text_size(px(13.))
+            .text_color(fg.opacity(0.85))
             .on_mouse_down(MouseButton::Left, |event, window, _| {
                 if event.click_count == 1 {
                     window.start_window_move();
@@ -624,14 +622,16 @@ impl Render for NoteView {
             .child(SharedString::from(title.clone()));
 
         let title_panel = h_flex()
-            .h(px(31.))
-            .px_1()
+            .h(px(32.))
+            .px(px(2.))
             .items_center()
-            .bg(title_bg)
-            .rounded_tl(px(12.))
-            .rounded_tr(px(12.))
-            .border_b_1()
-            .border_color(border)
+            .rounded_tl(px(8.))
+            .rounded_tr(px(8.))
+            .opacity(if self.hovered || self.collapsed {
+                1.0
+            } else {
+                0.0
+            })
             .when(crate::app::chrome::controls_on_left(), |b| {
                 b.child(note_controls(id, fg, cx))
             })
@@ -641,6 +641,7 @@ impl Render for NoteView {
                     Button::new(("note-expand", id as u64))
                         .ghost()
                         .xsmall()
+                        .text_color(fg)
                         .icon(IconName::Maximize)
                         .on_click(cx.listener(|this, _, window, cx| {
                             this.expand(window);
@@ -652,6 +653,10 @@ impl Render for NoteView {
                 Button::new(("note-preview", id as u64))
                     .ghost()
                     .small()
+                    .w(px(28.))
+                    .h(px(28.))
+                    .p_0()
+                    .text_color(fg)
                     .icon(IconName::Eye)
                     .when(self.preview, |b| b.text_color(cx.theme().primary))
                     .on_click(cx.listener(|this, _, _, cx| {
@@ -667,6 +672,10 @@ impl Render for NoteView {
                 Button::new(("menu", id as u64))
                     .ghost()
                     .small()
+                    .w(px(28.))
+                    .h(px(28.))
+                    .p_0()
+                    .text_color(fg)
                     .icon(IconName::Ellipsis)
                     .dropdown_menu(move |menu, window, cx| {
                         build_note_menu(
@@ -700,36 +709,43 @@ impl Render for NoteView {
             .child(fmt_button(
                 "bold",
                 IconName::Bold,
+                fg,
                 cx.listener(|this, _, window, cx| this.format_bool(0, window, cx)),
             ))
             .child(fmt_button(
                 "italic",
                 IconName::Italic,
+                fg,
                 cx.listener(|this, _, window, cx| this.format_bool(1, window, cx)),
             ))
             .child(fmt_button(
                 "underline",
                 IconName::Underline,
+                fg,
                 cx.listener(|this, _, window, cx| this.format_bool(2, window, cx)),
             ))
             .child(fmt_button(
                 "strike",
                 IconName::Strikethrough,
+                fg,
                 cx.listener(|this, _, window, cx| this.format_bool(3, window, cx)),
             ))
             .child(fmt_button(
                 "highlight",
                 IconName::Highlighter,
+                fg,
                 cx.listener(|this, _, window, cx| this.color_dialog(true, window, cx)),
             ))
             .child(fmt_button(
                 "bullet",
                 IconName::List,
+                fg,
                 cx.listener(|this, _, window, cx| this.toggle_line_prefix(0, window, cx)),
             ))
             .child(fmt_button(
                 "checkbox",
                 IconName::ListChecks,
+                fg,
                 cx.listener(|this, _, window, cx| this.toggle_line_prefix(2, window, cx)),
             ));
 
@@ -740,16 +756,19 @@ impl Render for NoteView {
                 d.child(fmt_button(
                     "numbered",
                     IconName::ListOrdered,
+                    fg,
                     cx.listener(|this, _, window, cx| this.toggle_line_prefix(1, window, cx)),
                 ))
                 .child(fmt_button(
                     "align-left",
                     IconName::TextAlignStart,
+                    fg,
                     cx.listener(|this, _, window, cx| this.set_note_align(Align::Left, window, cx)),
                 ))
                 .child(fmt_button(
                     "align-center",
                     IconName::TextAlignCenter,
+                    fg,
                     cx.listener(|this, _, window, cx| {
                         this.set_note_align(Align::Center, window, cx)
                     }),
@@ -757,6 +776,7 @@ impl Render for NoteView {
                 .child(fmt_button(
                     "align-right",
                     IconName::TextAlignEnd,
+                    fg,
                     cx.listener(|this, _, window, cx| {
                         this.set_note_align(Align::Right, window, cx)
                     }),
@@ -764,14 +784,16 @@ impl Render for NoteView {
                 .child(fmt_button(
                     "clear",
                     IconName::Eraser,
+                    fg,
                     cx.listener(|this, _, window, cx| this.clear_formatting(window, cx)),
                 ))
             });
 
         let format_row = h_flex()
             .w_full()
-            .h(px(28.))
-            .px_1()
+            .h(px(30.))
+            .pl(px(6.))
+            .pr(px(18.))
             .items_center()
             .child(core_tools)
             .child(extra_tools)
@@ -780,6 +802,7 @@ impl Render for NoteView {
                 Button::new("font-size")
                     .ghost()
                     .xsmall()
+                    .text_color(fg)
                     .label(format!("{font_size}"))
                     .on_click(cx.listener(|this, _, _, cx| {
                         let id = this.note_id;
@@ -804,59 +827,55 @@ impl Render for NoteView {
 
         let toolbar = v_flex()
             .w_full()
-            .bg(theme::hsla(
-                theme::brightness(color, -4),
-                (opacity as f32 / 100.0).min(0.98),
-            ))
-            .border_b_1()
-            .border_color(border)
+            .border_t_1()
+            .border_color(divider)
             .child(format_row);
 
-        let editor =
-            div()
-                .flex()
-                .flex_1()
-                .min_h(px(0.))
-                .px_2()
-                .py_1()
-                .child(if self.preview || locked {
-                    div()
-                        .id("md-preview-scroll")
-                        .size_full()
-                        .overflow_y_scroll()
-                        .px_2()
-                        .py_1()
-                        .child(
-                            TextView::markdown(
-                                ("md-preview", id as u64),
-                                self.model
-                                    .read(cx)
-                                    .note(id)
-                                    .map(|n| n.doc.text.clone())
-                                    .unwrap_or_default(),
-                            )
-                            .text_color(fg)
-                            .text_size(px(font_size as f32))
-                            .selectable(false),
+        let editor = div()
+            .flex()
+            .flex_1()
+            .min_h(px(0.))
+            .px(px(11.))
+            .pt(px(6.))
+            .pb(px(2.))
+            .child(if self.preview || locked {
+                div()
+                    .id("md-preview-scroll")
+                    .size_full()
+                    .overflow_y_scroll()
+                    .px(px(4.))
+                    .py_1()
+                    .child(
+                        TextView::markdown(
+                            ("md-preview", id as u64),
+                            self.model
+                                .read(cx)
+                                .note(id)
+                                .map(|n| n.doc.text.clone())
+                                .unwrap_or_default(),
                         )
-                        .into_any_element()
-                } else {
-                    Textarea::new(&self.editor)
-                        .appearance(false)
-                        .bordered(false)
-                        .with_size(gpui_kit::component::Size::XSmall)
-                        .readonly(locked)
-                        .text_size(px(font_size as f32))
                         .text_color(fg)
-                        .font_family(SharedString::from(font_name))
-                        .text_align(match doc_align {
-                            Align::Left => gpui_kit::TextAlign::Left,
-                            Align::Center => gpui_kit::TextAlign::Center,
-                            Align::Right => gpui_kit::TextAlign::Right,
-                        })
-                        .size_full()
-                        .into_any_element()
-                });
+                        .text_size(px(font_size as f32))
+                        .selectable(false),
+                    )
+                    .into_any_element()
+            } else {
+                Textarea::new(&self.editor)
+                    .appearance(false)
+                    .bordered(false)
+                    .with_size(gpui_kit::component::Size::XSmall)
+                    .readonly(locked)
+                    .text_size(px(font_size as f32))
+                    .text_color(fg)
+                    .font_family(SharedString::from(font_name))
+                    .text_align(match doc_align {
+                        Align::Left => gpui_kit::TextAlign::Left,
+                        Align::Center => gpui_kit::TextAlign::Center,
+                        Align::Right => gpui_kit::TextAlign::Right,
+                    })
+                    .size_full()
+                    .into_any_element()
+            });
 
         v_flex()
             .size_full()
@@ -938,17 +957,22 @@ impl Render for NoteView {
             )
             .child(
                 v_flex()
+                    .id(("note-card", self.note_id as u64))
                     .size_full()
-                    .rounded(px(10.))
+                    .rounded(px(8.))
                     .overflow_hidden()
                     .bg(bg)
-                    .border_1()
-                    .border_color(border)
-                    .shadow_lg()
+                    .shadow_md()
+                    .on_hover(cx.listener(|this, hovered, _, cx| {
+                        if this.hovered != *hovered {
+                            this.hovered = *hovered;
+                            cx.notify();
+                        }
+                    }))
                     .child(title_panel)
                     .when(!self.collapsed, |d| {
-                        d.when(!locked && !self.preview, |d| d.child(toolbar))
-                            .child(editor)
+                        d.child(editor)
+                            .when(!locked && !self.preview, |d| d.child(toolbar))
                     })
                     .child(
                         div()
@@ -1220,13 +1244,6 @@ fn build_note_menu(
             windows::resize_note_window(cx, m.clone(), id);
         });
 
-    let maximize = PopupMenuItem::new("Maximize")
-        .icon(IconName::Maximize)
-        .on_click(|_, window, _| window.zoom_window());
-    let minimize = PopupMenuItem::new("Minimize")
-        .icon(IconName::Minus)
-        .on_click(|_, window, _| window.minimize_window());
-
     let m = model.clone();
     let v = view.clone();
     let hide_others = PopupMenuItem::new("Hide others")
@@ -1320,7 +1337,13 @@ fn build_note_menu(
             window.remove_window();
         });
 
+    // Keep the menu inside the note window; when the note is short the items
+    // scroll instead of being clipped by the window bounds.
+    let max_h = (window.bounds().size.height.as_f32() - 44.).max(120.);
+
     menu.min_w(px(230.))
+        .max_h(px(max_h))
+        .scrollable(true)
         .item(new_note)
         .item(duplicate)
         .item(preview_item)
@@ -1338,8 +1361,6 @@ fn build_note_menu(
         .item(notebook_item)
         .separator()
         .item(fit)
-        .item(maximize)
-        .item(minimize)
         .item(hide_others)
         .separator()
         .item(export)
@@ -1351,50 +1372,40 @@ fn build_note_menu(
 }
 
 fn note_controls(id: i64, fg: gpui_kit::Hsla, cx: &mut Context<NoteView>) -> impl IntoElement {
-    let mut items = Vec::new();
-    for kind in crate::app::chrome::control_order() {
-        let button = match kind {
-            0 => Button::new(("note-close", id as u64))
-                .ghost()
-                .xsmall()
-                .label("✕")
-                .text_color(fg)
-                .on_click(cx.listener(|this, _, window, cx| {
-                    let id = this.note_id;
-                    this.model.update(cx, |m, _| {
-                        m.mutate_note(id, |n| n.visible = false);
-                    });
-                    window.remove_window();
-                    cx.notify();
-                })),
-            1 => Button::new(("note-min", id as u64))
-                .ghost()
-                .xsmall()
-                .icon(IconName::Minus)
-                .on_click(|_, window, _| window.minimize_window()),
-            _ => Button::new(("note-max", id as u64))
-                .ghost()
-                .xsmall()
-                .icon(IconName::Maximize)
-                .on_click(|_, window, _| window.zoom_window()),
-        };
-        items.push(button);
-    }
-    h_flex().gap_0p5().items_center().children(items)
+    h_flex().gap_0p5().items_center().child(
+        Button::new(("note-close", id as u64))
+            .ghost()
+            .xsmall()
+            .w(px(28.))
+            .h(px(28.))
+            .p_0()
+            .label("✕")
+            .text_color(fg)
+            .on_click(cx.listener(|this, _, window, cx| {
+                let id = this.note_id;
+                this.model.update(cx, |m, _| {
+                    m.mutate_note(id, |n| n.visible = false);
+                });
+                window.remove_window();
+                cx.notify();
+            })),
+    )
 }
 
 fn fmt_button(
     id: &str,
     icon: IconName,
+    fg: gpui_kit::Hsla,
     handler: impl Fn(&ClickEvent, &mut Window, &mut App) + 'static,
 ) -> Button {
     Button::new(format!("fmt-{id}"))
         .ghost()
         .xsmall()
         .flex_shrink_0()
-        .w(px(22.))
-        .h(px(22.))
+        .w(px(28.))
+        .h(px(28.))
         .p_0()
+        .text_color(fg)
         .icon(icon)
         .on_click(handler)
 }

@@ -316,10 +316,10 @@ impl Default for DefaultNote {
             size: 1,
             title: 0,
             font_name: "Segoe UI".into(),
-            font_size: 12,
+            font_size: 15,
             font_style: 0,
             font_color: 0,
-            color: 0xFFFF99,
+            color: 0xFFF3AB,
             opacity: 100,
             always_on_top: false,
         }

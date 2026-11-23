@@ -583,8 +583,9 @@ impl Render for ExplorerView {
             .id("note-rows")
             .flex_1()
             .min_h(px(0.))
-            .gap_1()
-            .p_4()
+            .gap_3()
+            .px(px(12.))
+            .py(px(4.))
             .overflow_y_scroll()
             .children(list.iter().enumerate().map(|(_i, note)| {
                 let id = note.id;
@@ -599,17 +600,49 @@ impl Render for ExplorerView {
                 let model = model.clone();
                 let menu_model = model.clone();
                 let weak_view = cx.entity().downgrade();
+                let dark_notes = {
+                    let m = model.read(cx);
+                    matches!(m.settings.note_mode, NoteMode::Dark)
+                        || (matches!(m.settings.note_mode, NoteMode::Auto)
+                            && (matches!(m.settings.app_mode, AppMode::Dark)
+                                || (matches!(m.settings.app_mode, AppMode::System)
+                                    && crate::system_prefers_dark())))
+                };
+                let card_color = if dark_notes {
+                    crate::theme::note_color_dark(color)
+                } else {
+                    color
+                };
+                let card_fg = crate::theme::hsla(crate::theme::auto_font_color(card_color), 0.92);
+                let card_fg_muted = card_fg.opacity(0.62);
+                let hover_ink = if crate::theme::auto_font_color(card_color) == 0xEEEEEE {
+                    crate::theme::hsla(0xFFFFFF, 1.0)
+                } else {
+                    crate::theme::hsla(0x000000, 1.0)
+                };
+                let card_bg = crate::theme::rgba(card_color);
+                let card_border = if selected {
+                    cx.theme().accent
+                } else {
+                    cx.theme().border.opacity(0.0)
+                };
+                let page_bg = cx.theme().background;
                 div()
                     .id(("note-row", id as u64))
+                    .group("note-card")
+                    .relative()
                     .flex()
                     .items_center()
                     .gap_3()
-                    .h(px(54.))
-                    .px_3()
-                    .rounded(px(6.))
+                    .min_h(px(56.))
+                    .px(px(15.))
+                    .py(px(10.))
+                    .rounded(px(2.))
+                    .overflow_hidden()
+                    .bg(card_bg)
+                    .border_1()
+                    .border_color(card_border)
                     .cursor(gpui_kit::CursorStyle::PointingHand)
-                    .when(selected, |d| d.bg(cx.theme().accent.opacity(0.14)))
-                    .hover(|d| d.bg(cx.theme().muted.opacity(0.25)))
                     .on_click(move |event: &ClickEvent, _, cx: &mut App| {
                         let additive = event.modifiers().control || event.modifiers().shift;
                         model.update(cx, |m, cx| {
@@ -630,10 +663,12 @@ impl Render for ExplorerView {
                     })
                     .child(
                         div()
-                            .w(px(6.))
-                            .h(px(34.))
-                            .rounded_full()
-                            .bg(crate::theme::rgba(color)),
+                            .absolute()
+                            .inset_0()
+                            .rounded(px(2.))
+                            .bg(hover_ink)
+                            .opacity(0.0)
+                            .group_hover("note-card", |d| d.opacity(0.07)),
                     )
                     .child(
                         v_flex()
@@ -646,29 +681,34 @@ impl Render for ExplorerView {
                                     .items_center()
                                     .child(
                                         div()
+                                            .flex_1()
+                                            .min_w(px(0.))
+                                            .truncate()
                                             .text_sm()
                                             .font_weight(gpui_kit::FontWeight::SEMIBOLD)
+                                            .text_color(card_fg)
                                             .child(title),
                                     )
                                     .when(starred, |d| {
                                         d.child(
                                             Icon::new(IconName::Star)
                                                 .xsmall()
-                                                .text_color(cx.theme().warning),
+                                                .text_color(card_fg_muted),
                                         )
                                     })
                                     .when(locked, |d| {
                                         d.child(
                                             Icon::new(IconName::Lock)
                                                 .xsmall()
-                                                .text_color(cx.theme().muted_foreground),
+                                                .text_color(card_fg_muted),
                                         )
                                     }),
                             )
                             .child(
                                 div()
+                                    .truncate()
                                     .text_xs()
-                                    .text_color(cx.theme().muted_foreground)
+                                    .text_color(card_fg_muted)
                                     .child(snippet),
                             ),
                     )
@@ -676,18 +716,28 @@ impl Render for ExplorerView {
                         v_flex()
                             .items_end()
                             .gap_0p5()
-                            .child(
-                                div()
-                                    .text_xs()
-                                    .text_color(cx.theme().muted_foreground)
-                                    .child(updated),
-                            )
-                            .child(
-                                div()
-                                    .text_xs()
-                                    .text_color(cx.theme().muted_foreground)
-                                    .child(notebook),
-                            ),
+                            .child(div().text_xs().text_color(card_fg_muted).child(updated))
+                            .child(div().text_xs().text_color(card_fg_muted).child(notebook)),
+                    )
+                    .child(
+                        gpui_kit::canvas(
+                            |_, _, _| (),
+                            move |bounds, _, window, _| {
+                                let mut path = gpui_kit::PathBuilder::fill();
+                                path.move_to(bounds.bottom_left());
+                                path.line_to(bounds.top_right());
+                                path.line_to(bounds.bottom_right());
+                                path.close();
+                                if let Ok(path) = path.build() {
+                                    window.paint_path(path, page_bg);
+                                }
+                            },
+                        )
+                        .absolute()
+                        .right_0()
+                        .bottom_0()
+                        .w(px(14.))
+                        .h(px(14.)),
                     )
                     .context_menu(move |menu, window, cx| {
                         build_note_row_menu(

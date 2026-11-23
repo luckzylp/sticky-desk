@@ -197,7 +197,7 @@ impl Store {
                 starred: geti("STARRED", 0) != 0,
                 aot: geti("AOT", 0) != 0,
                 minimize: geti("MINIMIZE", 0) != 0,
-                color: geti("COLOR", 0xFFFF99) as u32,
+                color: geti("COLOR", 0xFFF3AB) as u32,
                 opacity: geti("OPACITY", 100).clamp(10, 100) as u8,
                 left: geti("LEFT", 100) as i32,
                 top: geti("TOP", 100) as i32,
