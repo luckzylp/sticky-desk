@@ -174,7 +174,12 @@ assets/
 vendor/gpui-component patched GPUI component library
 ```
 
-## What's new in 0.5.0
+## What's new in 0.5.1
+
+- CI and release workflows now run on Ubuntu 24.04.
+- Version bump for the 0.5.1 release.
+
+## 0.5.0 highlights
 
 - Redesigned note windows and Explorer cards after Microsoft Sticky Notes 6.0.2.0.
 - Note windows keep only a close button; minimize and maximize were removed from the note UI.
@@ -184,7 +189,7 @@ vendor/gpui-component patched GPUI component library
 
 ## Status
 
-The current release is **0.5.0**. StickyDesk is usable for daily notes; back up `Notes.db` before
+The current release is **0.5.1**. StickyDesk is usable for daily notes; back up `Notes.db` before
 large reorganisations or database-folder changes.
 
 ## License
